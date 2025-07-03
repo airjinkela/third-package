@@ -79,7 +79,13 @@ jobs:
         git_clone https://gitee.com/airjinkela/quectel_cm_5-g
         git_clone https://github.com/torguardvpn/luci-app-easymesh
         git_clone https://github.com/xptsp/openwrt-twin-bcrypt-js
-        git_clone https://github.com/xptsp/luci-app-adguardhome 
+        git_clone https://github.com/xptsp/luci-app-adguardhome
+        git_clone https://github.com/tianiue/luci-app-bypass
+        git_clone https://github.com/fcshark-org/openwrt-fchomo
+        git_clone https://github.com/nikkinikki-org/OpenWrt-nikki
+        git_clone https://github.com/xiaorouji/openwrt-passwall2
+        git_clone https://github.com/frainzy1477/pdnsd
+        git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
 
     - name: Delete duplicated packages
