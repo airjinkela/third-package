@@ -81,10 +81,10 @@ jobs:
         git_clone https://github.com/xptsp/openwrt-twin-bcrypt-js
         git_clone https://github.com/xptsp/luci-app-adguardhome
         git_clone https://github.com/tianiue/luci-app-bypass
-        git_clone https://github.com/fcshark-org/openwrt-fchomo
         git_clone https://github.com/nikkinikki-org/OpenWrt-nikki
         git_clone https://github.com/xiaorouji/openwrt-passwall2
         git_clone https://github.com/frainzy1477/pdnsd
+        git_sparse_clone master https://github.com/fcshark-org/openwrt-fchomo luci-app-fchomo
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
 
@@ -94,6 +94,10 @@ jobs:
         set +e
         rm -Rf */.git
         rm -rf */.github
+
+    - name: Apply patches
+      run: |
+        find ".github/diy/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "cat '%'  | patch -d './' -p1 -E --forward --no-backup-if-mismatch" 
 
     - name: Apply
       run: |
