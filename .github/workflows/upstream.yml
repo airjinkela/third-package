@@ -9,7 +9,7 @@ on:
       - '.gitignore'
       - '.github/diy/**'
   schedule:
-    - cron: 0 */12 * * *
+    - cron: 0 0 12 1/5 *
   watch:
     types: started
   workflow_dispatch:
