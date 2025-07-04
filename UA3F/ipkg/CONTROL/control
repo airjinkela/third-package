@@ -1,0 +1,11 @@
+Package: ua3f
+Version: 0.7.3-1
+Depends: luci-compat
+Source: /feed/openwrt
+SourceName: UA3F
+License: GPL-3.0-only
+Section: net
+SourceDateEpoch: 1711267200
+Architecture: all
+Installed-Size:  3563520
+Description: Implementation of the next generation of HTTP User-Agent modification methodology.
