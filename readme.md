@@ -9,3 +9,5 @@
 * https://github.com/fcshark-org/openwrt-fchomo
 * https://github.com/sbwml/luci-app-mosdns
 * https://github.com/sbwml/openwrt_pkgs luci-app-socat
+* https://github.com/SunBK201/UA3F
+* https://github.com/CHN-beta/rkp-ipid

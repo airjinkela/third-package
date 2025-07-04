@@ -84,6 +84,8 @@ jobs:
         git_clone https://github.com/nikkinikki-org/OpenWrt-nikki
         git_clone https://github.com/xiaorouji/openwrt-passwall2
         git_clone https://github.com/frainzy1477/pdnsd
+        git_clone https://github.com/CHN-beta/rkp-ipid
+        git_clone https://github.com/SunBK201/UA3F
         git_sparse_clone master https://github.com/fcshark-org/openwrt-fchomo luci-app-fchomo
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
