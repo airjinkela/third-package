@@ -442,6 +442,7 @@ function gen_config_server(node)
 	if node.tls == "1" and node.reality == "1" then
 		tls.certificate_path = nil
 		tls.key_path = nil
+		tls.server_name = node.reality_handshake_server
 		tls.reality = {
 			enabled = true,
 			private_key = node.reality_private_key,
@@ -991,9 +992,9 @@ function gen_config(var)
 				tag = urltest_tag,
 				outbounds = valid_nodes,
 				url = _node.urltest_url or "https://www.gstatic.com/generate_204",
-				interval = _node.urltest_interval and tonumber(_node.urltest_interval) and string.format("%dm", tonumber(_node.urltest_interval) / 60) or "3m",
-				tolerance = _node.urltest_tolerance and tonumber(_node.urltest_tolerance) and tonumber(_node.urltest_tolerance) or 50,
-				idle_timeout = _node.urltest_idle_timeout and tonumber(_node.urltest_idle_timeout) and string.format("%dm", tonumber(_node.urltest_idle_timeout) / 60) or "30m",
+				interval = (api.format_go_time(_node.urltest_interval) ~= "0s") and api.format_go_time(_node.urltest_interval) or "3m",
+				tolerance = (_node.urltest_tolerance and tonumber(_node.urltest_tolerance) > 0) and tonumber(_node.urltest_tolerance) or 50,
+				idle_timeout = (api.format_go_time(_node.urltest_idle_timeout) ~= "0s") and api.format_go_time(_node.urltest_idle_timeout) or "30m",
 				interrupt_exist_connections = (_node.urltest_interrupt_exist_connections == "true" or _node.urltest_interrupt_exist_connections == "1") and true or false
 			}
 			table.insert(outbounds, outbound)
@@ -1521,6 +1522,18 @@ function gen_config(var)
 					table.insert(dns.rules, dns_rule)
 				end
 			end
+		end
+
+		if remote_dns_fake and default_dns_flag == "remote" then
+			-- When default is not direct and enable fakedns, default DNS use FakeDNS.
+			local fakedns_dns_rule = {
+				query_type = {
+					"A", "AAAA"
+				},
+				server = fakedns_tag,
+				disable_cache = true
+			}
+			table.insert(dns.rules, fakedns_dns_rule)
 		end
 	
 		table.insert(inbounds, {
