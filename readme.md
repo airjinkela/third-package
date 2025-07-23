@@ -12,3 +12,4 @@
 * https://github.com/SunBK201/UA3F
 * https://github.com/CHN-beta/rkp-ipid
 * https://github.com/rockjake/luci-app-fancontrol
+* https://github.com/kiddin9/openwrt-tailscale
