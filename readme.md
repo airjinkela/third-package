@@ -13,3 +13,4 @@
 * https://github.com/CHN-beta/rkp-ipid
 * https://github.com/rockjake/luci-app-fancontrol
 * https://github.com/kiddin9/openwrt-tailscale
+* https://github.com/sbwml/luci-app-openlist2
