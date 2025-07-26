@@ -9,6 +9,6 @@ LUCI_DEPENDS:=+tailscale
 
 PKG_MAINTAINER:=Geoffrey Hall <asvows@gmail.com>
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature
