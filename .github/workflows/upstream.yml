@@ -91,6 +91,7 @@ jobs:
         git_sparse_clone master https://github.com/fcshark-org/openwrt-fchomo luci-app-fchomo
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
+        git_sparse_clone openwrt-24.10 https://github.com/RuijieNetworksCommunity/immortalwrt-mt798x-luci themes/luci-theme-design
 
     - name: Delete duplicated packages
       run: |
