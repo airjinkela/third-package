@@ -92,7 +92,10 @@ jobs:
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
         git_sparse_clone openwrt-24.10 https://github.com/RuijieNetworksCommunity/immortalwrt-mt798x-luci themes/luci-theme-design
-
+        git_sparse_clone master https://github.com/fw876/helloworld shadowsocksr-libev
+        git_sparse_clone master https://github.com/fw876/helloworld shadowsocks-libev
+        git_sparse_clone master https://github.com/fw876/helloworld luci-app-ssr-plus
+        git_sparse_clone master https://github.com/fw876/helloworld dns2socks-rust
     - name: Delete duplicated packages
       run: |
         shopt -s extglob
