@@ -1576,6 +1576,12 @@ msgstr "后量子对等证书签名方案"
 msgid "Disable adaptive sizing of TLS records"
 msgstr "禁用 TLS 记录的自适应大小调整"
 
+msgid "ECH Query Policy"
+msgstr "ECH 查询策略"
+
+msgid "Controls the policy used when performing DNS queries for ECH configuration."
+msgstr "控制使用 DNS 查询 ECH 配置时的策略。"
+
 msgid "Enable Multipath TCP, need to be enabled in both server and client configuration."
 msgstr "启用 Multipath TCP，需在服务端和客户端配置中同时启用。"
 
@@ -1638,6 +1644,15 @@ msgstr "落地节点"
 
 msgid "Only support a layer of proxy."
 msgstr "仅支持一层代理。"
+
+msgid ""
+"Chained proxy works only with Xray or Sing-box nodes.<br>"
+"The chained node must be the same type as your subscription node (Xray with Xray, Sing-box with Sing-box).<br>"
+"You can only use manual or imported nodes as chained nodes."
+msgstr ""
+"链式代理仅支持 Xray 与 Sing-box 节点。<br>"
+"链式节点需与订阅节点类型一致（Xray 对应 Xray，Sing-box 对应 Sing-box）。<br>"
+"仅支持手动添加或导入的节点用作链式节点。"
 
 msgid "Set the default domain resolution strategy for the sing-box node."
 msgstr "为 sing-box 节点设置默认的域名解析策略。"
@@ -1791,3 +1806,21 @@ msgstr "可以通过输入 GeoIP/Geosite，提取它们所包含的域名/IP。"
 
 msgid "Use the GeoIP/Geosite query function to verify if the entered Geo rules are correct."
 msgstr "利用 GeoIP/Geosite 查询功能，可以验证输入的 Geo 规则是否正确。"
+
+msgid "Private Key Passphrase"
+msgstr "私钥指纹"
+
+msgid "Host Key"
+msgstr "主机密钥"
+
+msgid "Accept any if empty."
+msgstr "留空则不校验。"
+
+msgid "Host Key Algorithms"
+msgstr "主机密钥算法"
+
+msgid "Client Version"
+msgstr "客户端版本"
+
+msgid "Random version will be used if empty."
+msgstr "如留空，则使用随机版本。"

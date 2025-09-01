@@ -321,7 +321,11 @@ function gen_outbound(flag, node, tag, proxy_table)
 			end
 			protocol_table = {
 				server_ports = next(server_ports) and server_ports or nil,
-				hop_interval = next(server_ports) and "30s" or nil,
+				hop_interval = (function()
+							if not next(server_ports) then return nil end
+							local v = tonumber((node.hysteria_hop_interval or "30s"):match("^%d+"))
+							return (v and v >= 5) and (v .. "s") or "30s"
+						end)(),
 				up_mbps = tonumber(node.hysteria_up_mbps),
 				down_mbps = tonumber(node.hysteria_down_mbps),
 				obfs = node.hysteria_obfs,
@@ -397,7 +401,11 @@ function gen_outbound(flag, node, tag, proxy_table)
 			end
 			protocol_table = {
 				server_ports = next(server_ports) and server_ports or nil,
-				hop_interval = next(server_ports) and "30s" or nil,
+				hop_interval = (function()
+							if not next(server_ports) then return nil end
+							local v = tonumber((node.hysteria2_hop_interval or "30s"):match("^%d+"))
+							return (v and v >= 5) and (v .. "s") or "30s"
+						end)(),
 				up_mbps = (node.hysteria2_up_mbps and tonumber(node.hysteria2_up_mbps)) and tonumber(node.hysteria2_up_mbps) or nil,
 				down_mbps = (node.hysteria2_down_mbps and tonumber(node.hysteria2_down_mbps)) and tonumber(node.hysteria2_down_mbps) or nil,
 				obfs = {
@@ -428,6 +436,18 @@ function gen_outbound(flag, node, tag, proxy_table)
 				idle_session_timeout = "30s",
 				min_idle_session = 5,
 				tls = tls
+			}
+		end
+
+		if node.protocol == "ssh" then
+			protocol_table = {
+				user = (node.username and node.username ~= "") and node.username or "root",
+				password = (node.password and node.password ~= "") and node.password or "",
+				private_key = node.ssh_priv_key,
+				private_key_passphrase = node.ssh_priv_key_pp,
+				host_key = node.ssh_host_key,
+				host_key_algorithms = node.ssh_host_key_algo,
+				client_version = node.ssh_client_version
 			}
 		end
 
