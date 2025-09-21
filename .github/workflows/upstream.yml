@@ -87,7 +87,7 @@ jobs:
         git_clone https://github.com/CHN-beta/rkp-ipid
         git_clone https://github.com/SunBK201/UA3F
         git_clone https://github.com/rockjake/luci-app-fancontrol
-        git_clone https://github.com/kiddin9/openwrt-tailscale
+        git_clone https://github.com/kiddin9/openwrt-tailscale && mvdir openwrt-tailscale
         git_clone https://github.com/FUjr/modem_feeds
         git_clone https://github.com/sirpdboy/luci-app-lucky
         git_clone https://github.com/linkease/istore && mvdir istore/luci
