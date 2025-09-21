@@ -253,6 +253,14 @@ return view.extend({
 		o = s.option(form.Flag, 'enabled', _('Enable'));
 		o.default = o.enabled;
 		o.editable = true;
+		o.validate = function(section_id, value) {
+			return hm.validatePresetIDs.call(this, [
+				['select', 'type'],
+				['select', 'behavior'],
+				['select', 'format'],
+				['textarea', '_editer']
+			], ...arguments);
+		}
 
 		o = s.option(form.ListValue, 'type', _('Type'));
 		o.value('file', _('Local'));
@@ -289,11 +297,11 @@ return view.extend({
 		}
 		o.textvalue = function(section_id) {
 			let cval = this.cfgvalue(section_id) || this.default;
-			let inline = L.bind(function() {
+			let inline = function() {
 				let cval = this.cfgvalue(section_id) || this.default;
 				return (cval === 'inline') ? true : false;
-			}, s.getOption('type'));
-			return inline() ? _('none') : cval;
+			}.call(s.getOption('type'));
+			return inline ? _('none') : cval;
 		};
 		o.depends({'type': 'inline', '!reverse': true});
 

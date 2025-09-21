@@ -64,6 +64,14 @@ const dashrepos_urlparams = {
 	'metacubex/razord-meta': '?host=%s&port=%s&secret=%s'
 };
 
+const log_levels = [
+	['silent', _('Silent')],
+	['error', _('Error')],
+	['warning', _('Warning')],
+	['info', _('Info')],
+	['debug', _('Debug')]
+];
+
 const glossary = {
 	proxy_group: {
 		prefmt: 'group_%s',
@@ -171,11 +179,13 @@ const preset_outbound = {
 	],
 	direct: [
 		['', _('null')],
-		['DIRECT']
+		['DIRECT'],
+		['GLOBAL']
 	],
 	dns: [
 		['', 'RULES'],
-		['DIRECT']
+		['DIRECT'],
+		['GLOBAL']
 	]
 };
 
@@ -337,7 +347,7 @@ const CBIGridSection = form.GridSection.extend({
 				button.disabled = true;
 				return _('Expecting: %s').format(_('unique identifier'));
 			} else {
-				button.disabled = null;
+				button.removeAttribute('disabled');
 				return true;
 			}
 		}, 'blur', 'keyup');
@@ -375,6 +385,18 @@ const CBIDynamicList = form.DynamicList.extend({ // @pr7558_merged
 	}
 });
 
+const CBIStaticList = form.DynamicList.extend({
+	__name__: 'CBI.StaticList',
+
+	renderWidget(/* ... */) {
+		let El = (!pr7558_merged ? CBIDynamicList : form.DynamicList).prototype.renderWidget.apply(this, arguments); // @pr7558_merged
+
+		El.querySelector('.add-item ul > li[data-value="-"]')?.remove();
+
+		return El;
+	}
+});
+
 const CBIListValue = form.ListValue.extend({
 	renderWidget(/* ... */) {
 		let frameEl = form.ListValue.prototype.renderWidget.apply(this, arguments);
@@ -389,18 +411,6 @@ const CBIRichMultiValue = form.MultiValue.extend({
 	__name__: 'CBI.RichMultiValue',
 
 	value: form.RichListValue.prototype.value
-});
-
-const CBIStaticList = form.DynamicList.extend({
-	__name__: 'CBI.StaticList',
-
-	renderWidget(/* ... */) {
-		let El = (!pr7558_merged ? CBIDynamicList : form.DynamicList).prototype.renderWidget.apply(this, arguments); // @pr7558_merged
-
-		El.querySelector('.add-item ul > li[data-value="-"]')?.remove();
-
-		return El;
-	}
 });
 
 const CBITextValue = form.TextValue.extend({
@@ -456,6 +466,7 @@ const CBIHandleImport = baseclass.extend(/** @lends hm.HandleImport.prototype */
 		this.description = description ?? '';
 		this.placeholder = '';
 		this.appendcommand = '';
+		this.overridecommand = '';
 	},
 
 	calcID(field, name) {
@@ -467,7 +478,7 @@ const CBIHandleImport = baseclass.extend(/** @lends hm.HandleImport.prototype */
 		const field = this.section.hm_field;
 
 		let content = textarea.getValue().trim();
-		let command = `.["${field}"]` + this.appendcommand;
+		let command = this.overridecommand || `.["${field}"]` + this.appendcommand;
 		if (['proxy-providers', 'rule-providers'].includes(field))
 			content = content.replace(/(\s*payload:)/g, "$1 |-") /* payload to text */
 
@@ -967,7 +978,7 @@ function renderResDownload(section_id) {
 		E('button', {
 			class: 'cbi-button cbi-button-add',
 			disabled: (type !== 'http') || null,
-			click: ui.createHandlerFn(this, function(section_type, section_id, type, url, header) {
+			click: ui.createHandlerFn(this, (section_type, section_id, type, url, header) => {
 				if (type === 'http') {
 					return downloadFile(section_type, section_id, url, header).then((res) => {
 						ui.addNotification(null, E('p', _('Download successful.')));
@@ -1067,7 +1078,7 @@ function handleRemoveIdles() {
 					E('button', {
 						class: 'cbi-button cbi-button-negative important',
 						id: 'rmidles.' + filename + '.button',
-						click: ui.createHandlerFn(this, function(filename) {
+						click: ui.createHandlerFn(this, (filename) => {
 							return removeFile(section_type, filename).then((res) => {
 								let node = document.getElementById('rmidles.' + filename + '.label');
 								node.innerHTML = '<s>%s</s>'.format(node.innerHTML);
@@ -1097,6 +1108,28 @@ function textvalue2Value(section_id) {
 	let i = this.keylist.indexOf(cval);
 
 	return this.vallist[i];
+}
+
+function validatePresetIDs(disoption_list, section_id) {
+	let node;
+	let hm_prefmt = glossary[this.section.sectiontype].prefmt;
+	let preset_ids = [
+		'fchomo_direct_list',
+		'fchomo_proxy_list',
+		'fchomo_china_list',
+		'fchomo_gfw_list'
+	];
+
+	if (preset_ids.map((v) => hm_prefmt.format(v)).includes(section_id)) {
+		disoption_list.forEach(([typ, opt]) => {
+			node = this.section.getUIElement(section_id, opt)?.node;
+			(typ ? node?.querySelector(typ) : node)?.setAttribute(typ === 'textarea' ? 'readOnly' : 'disabled', '');
+		});
+
+		this.map.findElement('id', 'cbi-fchomo-' + section_id)?.lastChild.querySelector('.cbi-button-remove')?.remove();
+	}
+
+	return true;
 }
 
 function validateAuth(section_id, value) {
@@ -1397,6 +1430,7 @@ return baseclass.extend({
 	stunserver,
 	dashrepos,
 	dashrepos_urlparams,
+	log_levels,
 	glossary,
 	health_checkurls,
 	inbound_type,
@@ -1418,9 +1452,9 @@ return baseclass.extend({
 	/* Prototype */
 	GridSection: CBIGridSection,
 	DynamicList: CBIDynamicList,
+	StaticList: CBIStaticList,
 	ListValue: CBIListValue,
 	RichMultiValue: CBIRichMultiValue,
-	StaticList: CBIStaticList,
 	TextValue: CBITextValue,
 	GenValue: CBIGenValue,
 	GenText: CBIGenText,
@@ -1454,6 +1488,7 @@ return baseclass.extend({
 	handleReload,
 	handleRemoveIdles,
 	textvalue2Value,
+	validatePresetIDs,
 	validateAuth,
 	validateAuthUsername,
 	validateAuthPassword,

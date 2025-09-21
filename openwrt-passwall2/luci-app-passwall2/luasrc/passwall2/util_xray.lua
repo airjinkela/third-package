@@ -24,7 +24,8 @@ local function get_noise_packets()
 		local noise = (n.enabled == "1") and {
 			type = n.type,
 			packet = n.packet,
-			delay = string.find(n.delay, "-") and n.delay or tonumber(n.delay)
+			delay = string.find(n.delay, "-") and n.delay or tonumber(n.delay),
+			applyTo = n.applyTo
 		} or nil
 		table.insert(noises, noise)
 	end)
@@ -94,14 +95,11 @@ function gen_outbound(flag, node, tag, proxy_table)
 			node.port = new_port
 			node.stream_security = "none"
 		else
-			if node.flow == "xtls-rprx-vision" then
-			else
-				if proxy_tag then
-					node.proxySettings = {
-						tag = proxy_tag,
-						transportLayer = true
-					}
-				end
+			if proxy_tag then
+				node.proxySettings = {
+					tag = proxy_tag,
+					transportLayer = true
+				}
 			end
 		end
 		
@@ -137,16 +135,15 @@ function gen_outbound(flag, node, tag, proxy_table)
 			proxySettings = node.proxySettings or nil,
 			protocol = node.protocol,
 			mux = {
-				enabled = (node.mux == "1" or node.xmux == "1") and true or false,
-				concurrency = (node.mux == "1" and ((node.mux_concurrency) and tonumber(node.mux_concurrency) or 8)) or ((node.xmux == "1") and -1) or nil,
-				xudpConcurrency = (node.xmux == "1" and ((node.xudp_concurrency) and tonumber(node.xudp_concurrency) or 8)) or nil
+				enabled = (node.mux == "1") and true or false,
+				concurrency = (node.mux == "1" and ((node.mux_concurrency) and tonumber(node.mux_concurrency) or -1)) or nil,
+				xudpConcurrency = (node.mux == "1" and ((node.xudp_concurrency) and tonumber(node.xudp_concurrency) or 8)) or nil
 			} or nil,
 			-- 底层传输配置
 			streamSettings = (node.streamSettings or node.protocol == "vmess" or node.protocol == "vless" or node.protocol == "socks" or node.protocol == "shadowsocks" or node.protocol == "trojan") and {
 				sockopt = {
 					mark = 255,
 					tcpMptcp = (node.tcpMptcp == "1") and true or nil,
-					tcpNoDelay = (node.tcpNoDelay == "1") and true or nil,
 					dialerProxy = (fragment or noise) and "dialerproxy" or nil
 				},
 				network = node.transport,
@@ -198,13 +195,6 @@ function gen_outbound(flag, node, tag, proxy_table)
 					earlyDataHeaderName = (node.ws_earlyDataHeaderName) and node.ws_earlyDataHeaderName or nil,
 					heartbeatPeriod = tonumber(node.ws_heartbeatPeriod) or nil
 				} or nil,
-				dsSettings = (node.transport == "ds") and
-					{path = node.ds_path} or nil,
-				quicSettings = (node.transport == "quic") and {
-					security = node.quic_security,
-					key = node.quic_key,
-					header = {type = node.quic_guise}
-				} or nil,
 				grpcSettings = (node.transport == "grpc") and {
 					serviceName = node.grpc_serviceName,
 					multiMode = (node.grpc_mode == "multi") and true or nil,
@@ -217,10 +207,10 @@ function gen_outbound(flag, node, tag, proxy_table)
 					path = node.httpupgrade_path or "/",
 					host = node.httpupgrade_host
 				} or nil,
-				xhttpSettings = (node.transport == "xhttp" or node.transport == "splithttp") and {
+				xhttpSettings = (node.transport == "xhttp") and {
 					mode = node.xhttp_mode or "auto",
-					path = node.xhttp_path or node.splithttp_path or "/",
-					host = node.xhttp_host or node.splithttp_host,
+					path = node.xhttp_path or "/",
+					host = node.xhttp_host,
 					-- 如果包含 "extra" 节，取 "extra" 内的内容，否则直接赋值给 extra
 					extra = node.xhttp_extra and (function()
 						local success, parsed = pcall(jsonc.parse, node.xhttp_extra)
@@ -243,7 +233,7 @@ function gen_outbound(flag, node, tag, proxy_table)
 								level = 0,
 								security = (node.protocol == "vmess") and node.security or nil,
 								encryption = node.encryption or "none",
-								flow = (node.protocol == "vless" and node.tls == "1" and (node.transport == "raw" or node.transport == "tcp") and node.flow and node.flow ~= "") and node.flow or nil
+								flow = (node.protocol == "vless" and node.tls == "1" and (node.transport == "raw" or node.transport == "tcp" or node.transport == "xhttp") and node.flow and node.flow ~= "") and node.flow or nil
 
 							}
 						}
@@ -315,7 +305,7 @@ function gen_config_server(node)
 			for i = 1, #node.uuid do
 				clients[i] = {
 					id = node.uuid[i],
-					flow = ("vless" == node.protocol and "1" == node.tls and "raw" == node.transport and node.flow and node.flow ~= "") and node.flow or nil
+					flow = (node.protocol == "vless" and node.tls == "1" and (node.transport == "raw" or node.transport == "xhttp") and node.flow and node.flow ~= "") and node.flow or nil
 				}
 			end
 			settings = {
@@ -494,14 +484,6 @@ function gen_config_server(node)
 					wsSettings = (node.transport == "ws") and {
 						host = node.ws_host or nil,
 						path = node.ws_path
-					} or nil,
-					dsSettings = (node.transport == "ds") and {
-						path = node.ds_path
-					} or nil,
-					quicSettings = (node.transport == "quic") and {
-						security = node.quic_security,
-						key = node.quic_key,
-						header = {type = node.quic_guise}
 					} or nil,
 					grpcSettings = (node.transport == "grpc") and {
 						serviceName = node.grpc_serviceName
@@ -927,7 +909,7 @@ function gen_config(var)
 							table.insert(outbounds, copied_outbound)
 							return copied_outbound.tag, nil
 						else
-							if use_proxy and (_node.type ~= "Xray" or _node.flow == "xtls-rprx-vision") then
+							if use_proxy and _node.type ~= "Xray" then
 								new_port = get_new_port()
 								table.insert(inbounds, {
 									tag = "proxy_" .. rule_name,
@@ -1566,14 +1548,14 @@ function gen_config(var)
 					fragment = (xray_settings.fragment == "1") and {
 						packets = (xray_settings.fragment_packets and xray_settings.fragment_packets ~= "") and xray_settings.fragment_packets,
 						length = (xray_settings.fragment_length and xray_settings.fragment_length ~= "") and xray_settings.fragment_length,
-						interval = (xray_settings.fragment_interval and xray_settings.fragment_interval ~= "") and xray_settings.fragment_interval
+						interval = (xray_settings.fragment_interval and xray_settings.fragment_interval ~= "") and xray_settings.fragment_interval,
+						maxSplit = (xray_settings.fragment_maxSplit and xray_settings.fragment_maxSplit ~= "") and xray_settings.fragment_maxSplit
 					} or nil,
 					noises = (xray_settings.noise == "1") and get_noise_packets() or nil
 				},
 				streamSettings = {
 					sockopt = {
-						mark = 255,
-						tcpNoDelay = true
+						mark = 255
 					}
 				}
 			})

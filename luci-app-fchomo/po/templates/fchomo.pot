@@ -195,6 +195,15 @@ msgstr ""
 msgid "Application version"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/fchomo/global.js:789
+msgid "As the TOP upstream of dnsmasq"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/fchomo/global.js:790
+#: htdocs/luci-static/resources/view/fchomo/global.js:797
+msgid "As the TOP upstream of dnsmasq."
+msgstr ""
+
 #: htdocs/luci-static/resources/view/fchomo/server.js:207
 msgid "Auth timeout"
 msgstr ""
@@ -1613,7 +1622,7 @@ msgid "Operation mode"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/fchomo/client.js:1459
-msgid "Override ECS in original request."
+msgid "Override the existing ECS in original request."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/fchomo/global.js:656
@@ -2738,6 +2747,10 @@ msgstr ""
 #: htdocs/luci-static/resources/view/fchomo/node.js:263
 #: htdocs/luci-static/resources/view/fchomo/server.js:188
 msgid "cubic"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/fchomo/global.js:799
+msgid "dnsmasq selects upstream on its own. (may affect CDN accuracy)"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/fchomo/node.js:1152
