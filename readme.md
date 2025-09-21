@@ -13,6 +13,12 @@
 * https://github.com/CHN-beta/rkp-ipid
 * https://github.com/rockjake/luci-app-fancontrol
 * https://github.com/kiddin9/openwrt-tailscale
+* https://github.com/linkease/istore
+* https://github.com/linkease/nas-packages-luci
+* https://github.com/linkease/nas-packages
 * https://github.com/RuijieNetworksCommunity/immortalwrt-mt798x-luci themes/luci-theme-design
+* https://github.com/fw876/helloworld shadowsocksr-libev shadowsocks-libev luci-app-ssr-plus dns2socks-rust
+* https://github.com/linkease/istore-packages luci-app-uugamebooster qBittorrent-EE luci-app-qbittorrent-ee
+* https://github.com/coolsnowwolf/packages net/uugamebooster
 
 * ~~https://github.com/sbwml/luci-app-openlist2~~
