@@ -88,6 +88,9 @@ jobs:
         git_clone https://github.com/SunBK201/UA3F
         git_clone https://github.com/rockjake/luci-app-fancontrol
         git_clone https://github.com/kiddin9/openwrt-tailscale
+        git_clone https://github.com/linkease/istore
+        git_clone https://github.com/linkease/nas-packages-luci
+        git_clone https://github.com/linkease/nas-packages
         git_sparse_clone master https://github.com/fcshark-org/openwrt-fchomo luci-app-fchomo
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
@@ -96,6 +99,10 @@ jobs:
         git_sparse_clone master https://github.com/fw876/helloworld shadowsocks-libev
         git_sparse_clone master https://github.com/fw876/helloworld luci-app-ssr-plus
         git_sparse_clone master https://github.com/fw876/helloworld dns2socks-rust
+        git_sparse_clone master https://github.com/coolsnowwolf/packages net/uugamebooster
+        git_sparse_clone main https://github.com/linkease/istore-packages luci-app-uugamebooster
+        git_sparse_clone main https://github.com/linkease/istore-packages qBittorrent-EE
+        git_sparse_clone main https://github.com/linkease/istore-packages luci-app-qbittorrent-ee
     - name: Delete duplicated packages
       run: |
         shopt -s extglob
