@@ -1,5 +1,5 @@
---- a/openwrt-tailscale/luci-app-tailscale/Makefile
-+++ b/openwrt-tailscale/luci-app-tailscale/Makefile
+--- a/luci-app-tailscale/Makefile
++++ b/luci-app-tailscale/Makefile
 @@ -9,6 +9,6 @@ LUCI_DEPENDS:=+tailscale
  
  PKG_MAINTAINER:=Geoffrey Hall <asvows@gmail.com>
