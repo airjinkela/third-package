@@ -91,8 +91,8 @@ jobs:
         git_clone https://github.com/FUjr/modem_feeds
         git_clone https://github.com/sirpdboy/luci-app-lucky
         git_clone https://github.com/linkease/istore && mvdir istore/luci
-        git_clone https://github.com/linkease/nas-packages-luci && mvdir nas-packages-luci/luci
-        git_clone https://github.com/linkease/nas-packages && mvdir nas-packages/network/services
+        git_clone https://github.com/linkease/nas-packages-luci && mvdir nas-packages-luci/luci && rm -rf nas-packages-luci
+        git_clone https://github.com/linkease/nas-packages && mvdir nas-packages/network/services && rm -rf nas-packages
         git_sparse_clone master https://github.com/fcshark-org/openwrt-fchomo luci-app-fchomo
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
