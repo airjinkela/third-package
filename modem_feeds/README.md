@@ -1,9 +1,16 @@
-# QModem
+# QModem (English)
+
+# Important Notice for WebUI Users and Developers:
+The ATD (AT Daemon) on the modem side is a legacy design with inconsistent implementations across different vendors, resulting in poor compatibility, concurrency issues, incomplete responses, and unstable service behavior.
+When using WebUI and QModem (or multiple modem management plugins) simultaneously, concurrent AT command execution can lead to incomplete information, ATD service crashes (typically due to vendor implementation issues), garbled output, AT command timeouts, and modem disconnections.
+
+**For Users**: Choose one modem management solution and avoid using multiple plugins simultaneously.
+
+**For WebUI Developers**: Consider using the ubus ATD plugin instead of relying on the modem's built-in ATD service. [Reference Documentation](docs/rpcd-at-daemon-userguide.md)
 
 **[中文 README](README.zh-cn.md)** | **English README**
 
 [![Auto compile with OpenWrt SDK](https://github.com/FUjr/modem_feeds/actions/workflows/main.yml/badge.svg)](https://github.com/FUjr/modem_feeds/actions/workflows/main.yml)
-[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 
 **QModem** is a comprehensive cellular modem management system for OpenWRT-based routers. It provides a LuCI-based web interface for easy administration and advanced control over various cellular modems.
 

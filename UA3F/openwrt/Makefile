@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=UA3F
-PKG_VERSION:=0.7.3
+PKG_VERSION:=1.8.0
 PKG_RELEASE:=1
 
 # PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
@@ -26,17 +26,18 @@ define Package/ua3f
 	SECTION:=net
 	CATEGORY:=Network
 	SUBMENU:=Web Servers/Proxies
-	TITLE:=A SOCKS5 Server for Change User-Agent
+	TITLE:=Advanced HTTP Header Rewriting Tool
 	URL:=https://github.com/SunBK201/UA3F
-	DEPENDS:=$(GO_ARCH_DEPENDS) +luci-compat
+	DEPENDS:=$(GO_ARCH_DEPENDS) +luci-compat +ipset +iptables +iptables-mod-tproxy +iptables-mod-extra +iptables-mod-nat-extra +kmod-ipt-conntrack +iptables-mod-ipopt +iptables-mod-nfqueue +iptables-mod-conntrack-extra +kmod-nf-conntrack-netlink
 endef
 
 define Package/ua3f/description
-	Implementation of the next generation of HTTP User-Agent modification methodology.
+	Advanced HTTP Header Rewriting Tool.
 endef
 
 define Build/Prepare
 	$(CP) ../src/* $(PKG_BUILD_DIR)
+	po2lmo ./po/zh_cn/ua3f.po $(PKG_BUILD_DIR)/ua3f.zh-cn.lmo
 endef
 
 define Package/ua3f/conffiles
@@ -53,11 +54,9 @@ define Package/ua3f/install
 	$(INSTALL_BIN) ./files/ua3f.init $(1)/etc/init.d/ua3f
 	$(INSTALL_DIR) $(1)/etc/config/
 	$(INSTALL_CONF) ./files/ua3f.uci $(1)/etc/config/ua3f
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi/
-	$(INSTALL_CONF) ./files/luci/cbi.lua $(1)/usr/lib/lua/luci/model/cbi/ua3f.lua
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/controller/
-	$(INSTALL_CONF) ./files/luci/controller.lua $(1)/usr/lib/lua/luci/controller/ua3f.lua
-	
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/ua3f.zh-cn.lmo $(1)/usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo
+	$(CP) $(PKG_BUILD_DIR)/files/luci/* $(1)/usr/lib/lua/luci/
 endef
 
 $(eval $(call GoBinPackage,ua3f))

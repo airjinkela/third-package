@@ -310,9 +310,6 @@ match_config()
     #FM190W-GL 5G Module
     [[ "$name" = *"fm190w-gl"* ]] && name="fm190w-gl"
 
-    #RM500U-CNV
-    [[ "$name" = *"rm500u-cn"* ]] && name="rm500u-cn"
-
     [[ "$name" = *"rm500u-ea"* ]] && name="rm500u-ea"
     #t99w175
     [[ "$name" = *"mv31-w"* ]] || [[ "$name" = *"T99W175"* ]] && name="t99w175"
@@ -353,11 +350,15 @@ get_modem_model()
     cgmm=$(at $at_port "AT+CGMM")
     sleep 1
     cgmm_1=$(at $at_port "AT+CGMM?")
+    sleep 1
+    gmm=$(at $at_port "AT+GMM")
     name_1=$(echo -e "$cgmm" |grep "+CGMM: " | awk -F': ' '{print $2}')
     name_2=$(echo -e "$cgmm_1" |grep "+CGMM: " | awk -F'"' '{print $2} '| cut -d ' ' -f 1)
     name_3=$(echo -e "$cgmm" | sed -n '2p')
     name_4=$(echo -e "$cgmm" | sed -n '3p')
     name_5=$(echo -e "$cgmm" |grep "+CGMM: " | awk -F'"' '{print $2} '| cut -d ' ' -f 1)
+    name_6=$(echo -e "$gmm" | sed -n '2p')
+    name_7=$(echo -e "$gmm" | sed -n '3p')
     modem_name=""
 
     [ -n "$name_1" ] && match_config "$name_1"
@@ -365,6 +366,8 @@ get_modem_model()
     [ -n "$name_3" ] && [ -z "$modem_name" ] && match_config "$name_3"
     [ -n "$name_4" ] && [ -z "$modem_name" ] && match_config "$name_4"
     [ -n "$name_5" ] && [ -z "$modem_name" ] && match_config "$name_5"
+    [ -n "$name_6" ] && [ -z "$modem_name" ] && match_config "$name_6"
+    [ -n "$name_7" ] && [ -z "$modem_name" ] && match_config "$name_7"
     [ -z "$modem_name" ] && return 1
     return 0
 }
@@ -482,7 +485,7 @@ EOF
     exec_post_init $section_name
 #判断是否重启网络
     [ -n "$is_exist" ] && [ "$orig_network" == "$net_devices" ] && [ "$orig_at_port" == "/dev/$at_port" ] && [ "$orig_state" == "enabled" ] && [ "$orig_name" == "$modem_name" ] && return
-    /etc/init.d/qmodem_network restart
+    /etc/init.d/qmodem_network reload
 }
 
 remove()

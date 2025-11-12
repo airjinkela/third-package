@@ -5,7 +5,89 @@
 'require view';
 
 'require fchomo as hm';
+'require tools.prng as random';
 'require tools.widgets as widgets';
+
+document.querySelector('head').appendChild(E('link', {
+	'rel': 'stylesheet',
+	'type': 'text/css',
+	'href': L.resource('view/fchomo/node.css')
+}));
+
+const CBIBubblesValue = form.DummyValue.extend({
+	__name__: 'CBI.BubblesValue',
+
+	load(section_id) {
+		const uciconfig = this.config || this.section.configthis.config || this.map.config;
+		const type = uci.get(uciconfig, section_id, 'type');
+		const detour = uci.get(uciconfig, section_id, 'chain_tail_group') || uci.get(uciconfig, section_id, 'chain_tail');
+
+		switch (type) {
+			case 'node':
+				return '%s ⇒ %s'.format(
+					uci.get(uciconfig, section_id, 'chain_head'),
+					detour
+				);
+			case 'provider':
+				return '%s ⇒ %s'.format(
+					uci.get(uciconfig, section_id, 'chain_head_sub'),
+					detour
+				);
+			default:
+				return null;
+		}
+	},
+
+	textvalue(section_id) {
+		const cval = this.cfgvalue(section_id);
+		if (!cval)
+			return null;
+
+		const chain = cval.split('⇒').map(t => t.trim());
+		//const container_id = this.cbid(section_id) + '.bubbles';
+
+		let curWrapper = null;
+		for (let i = 0; i < chain.length; i++) {
+			const text = chain[i];
+
+			const labelEl = E('span', {
+				class: 'bubble-label'
+			}, [ text ]);
+
+			const bubbleEl = E('div', {
+				class: 'bubble',
+				//id: container_id + `.${hm.toUciname(text)}`,
+				style: '--bubble-color:%s; background-color:var(--bubble-color)'
+					.format(random.derive_color(text))
+			}, [ labelEl ]);
+
+			if (curWrapper)
+				bubbleEl.insertBefore(curWrapper, bubbleEl.firstChild);
+
+			curWrapper = bubbleEl;
+		}
+
+		return E('div', {
+			class: 'nested-bubbles-container',
+			//id: container_id
+		}, [ curWrapper ]);
+	},
+
+	hexToRgbArray(hex) {
+		// Remove the '#' if it exists
+		const shorthandRegex = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i;
+		const result = shorthandRegex.exec(hex);
+
+		if (result)
+			return [
+				parseInt(result[1], 16),
+				parseInt(result[2], 16),
+				parseInt(result[3], 16)
+			];
+		else
+			return null;
+	}
+});
 
 function parseProviderYaml(field, name, cfg) {
 	if (!cfg.type)
@@ -58,6 +140,54 @@ function parseProviderYaml(field, name, cfg) {
 	return config;
 }
 
+class VlessEncryptionClient {
+	// origin:
+	// https://github.com/XTLS/Xray-core/pull/5067
+	// client:
+	// https://github.com/muink/mihomo/blob/7917f24f428e40ac20b8b8f953b02cf59d1be334/transport/vless/encryption/factory.go#L12
+	// https://github.com/muink/mihomo/blob/7917f24f428e40ac20b8b8f953b02cf59d1be334/transport/vless/encryption/client.go#L45
+
+	constructor(payload) {
+		this.input = payload || '';
+		let content = String.prototype.split.call(this.input, '.');
+
+		if (content.length >= 4) {
+			this.method = content[0];
+			this.xormode = content[1];
+			this.rtt = content[2];
+			this.paddings = [];
+			this.keypairs = [];
+
+			// https://github.com/muink/mihomo/blob/7917f24f428e40ac20b8b8f953b02cf59d1be334/transport/vless/encryption/factory.go#L39
+			content.slice(3).forEach((e) => {
+				if (e.length < 20)
+					this.paddings.push(e);
+				else
+					this.keypairs.push(e);
+			});
+		} else
+			console.error('Invalid VLESS encryption value: ' + payload);
+	}
+
+	setKey(key, value) {
+		this[key] = value;
+
+		return this
+	}
+
+	toString() {
+		let required = [
+			this.method,
+			this.xormode,
+			this.rtt
+		].join('.');
+
+		return required +
+			(hm.isEmpty(this.paddings) ? '' : '.' + this.paddings.join('.')) + // Optional
+			(hm.isEmpty(this.keypairs) ? '' : '.' + this.keypairs.join('.')); // Required
+	}
+}
+
 return view.extend({
 	load() {
 		return Promise.all([
@@ -88,14 +218,15 @@ return view.extend({
 		ss.hm_lowcase_only = true;
 
 		ss.tab('field_general', _('General fields'));
+		ss.tab('field_vless_encryption', _('Vless Encryption fields'));
 		ss.tab('field_tls', _('TLS fields'));
 		ss.tab('field_transport', _('Transport fields'));
 		ss.tab('field_multiplex', _('Multiplex fields'));
 		ss.tab('field_dial', _('Dial fields'));
 
 		so = ss.taboption('field_general', form.Value, 'label', _('Label'));
-		so.load = L.bind(hm.loadDefaultLabel, so);
-		so.validate = L.bind(hm.validateUniqueValue, so);
+		so.load = hm.loadDefaultLabel;
+		so.validate = hm.validateUniqueValue;
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.Flag, 'enabled', _('Enable'));
@@ -121,19 +252,19 @@ return view.extend({
 		/* HTTP / SOCKS fields */
 		/* hm.validateAuth */
 		so = ss.taboption('field_general', form.Value, 'username', _('Username'));
-		so.validate = L.bind(hm.validateAuthUsername, so);
+		so.validate = hm.validateAuthUsername;
 		so.depends({type: /^(http|socks5|mieru|ssh)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.Value, 'password', _('Password'));
 		so.password = true;
-		so.validate = L.bind(hm.validateAuthPassword, so);
+		so.validate = hm.validateAuthPassword;
 		so.depends({type: /^(http|socks5|mieru|trojan|anytls|hysteria2|tuic|ssh)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', hm.TextValue, 'headers', _('HTTP header'));
 		so.placeholder = '{\n  "User-Agent": [\n    "Clash/v1.18.0",\n    "mihomo/1.18.3"\n  ],\n  "Authorization": [\n    //"token 1231231"\n  ]\n}';
-		so.validate = L.bind(hm.validateJson, so);
+		so.validate = hm.validateJson;
 		so.depends('type', 'http');
 		so.modalonly = true;
 
@@ -239,7 +370,7 @@ return view.extend({
 		so = ss.taboption('field_general', form.Value, 'snell_psk', _('Pre-shared key'));
 		so.password = true;
 		so.rmempty = false;
-		so.validate = L.bind(hm.validateAuthPassword, so);
+		so.validate = hm.validateAuthPassword;
 		so.depends('type', 'snell');
 		so.modalonly = true;
 
@@ -254,7 +385,7 @@ return view.extend({
 		/* TUIC fields */
 		so = ss.taboption('field_general', form.Value, 'uuid', _('UUID'));
 		so.rmempty = false;
-		so.validate = L.bind(hm.validateUUID, so);
+		so.validate = hm.validateUUID;
 		so.depends('type', 'tuic');
 		so.modalonly = true;
 
@@ -276,7 +407,7 @@ return view.extend({
 		so = ss.taboption('field_general', form.ListValue, 'tuic_udp_relay_mode', _('UDP relay mode'),
 			_('UDP packet relay mode.'));
 		so.default = 'native';
-		so.value('native', _('Native'));
+		so.value('native', _('Native UDP'));
 		so.value('quic', _('QUIC'));
 		so.depends({type: 'tuic', tuic_udp_over_stream: '0'});
 		so.modalonly = true;
@@ -352,14 +483,14 @@ return view.extend({
 		so = ss.taboption('field_general', form.Value, 'anytls_idle_session_check_interval', _('Idle session check interval'),
 			_('In seconds.'));
 		so.placeholder = '30';
-		so.validate = L.bind(hm.validateTimeDuration, so);
+		so.validate = hm.validateTimeDuration;
 		so.depends('type', 'anytls');
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.Value, 'anytls_idle_session_timeout', _('Idle session timeout'),
 			_('In seconds.'));
 		so.placeholder = '30';
-		so.validate = L.bind(hm.validateTimeDuration, so);
+		so.validate = hm.validateTimeDuration;
 		so.depends('type', 'anytls');
 		so.modalonly = true;
 
@@ -372,7 +503,7 @@ return view.extend({
 		/* VMess / VLESS fields */
 		so = ss.taboption('field_general', form.Value, 'vmess_uuid', _('UUID'));
 		so.rmempty = false;
-		so.validate = L.bind(hm.validateUUID, so);
+		so.validate = hm.validateUUID;
 		so.depends({type: /^(vmess|vless)$/});
 		so.modalonly = true;
 
@@ -417,10 +548,6 @@ return view.extend({
 		so.value('packetaddr', _('packet addr (v2ray-core v5+)'));
 		so.value('xudp', _('Xudp (Xray-core)'));
 		so.depends({type: /^(vmess|vless)$/});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'vless_encryption', _('encryption'));
-		so.depends('type', 'vless');
 		so.modalonly = true;
 
 		/* WireGuard fields */
@@ -496,6 +623,7 @@ return view.extend({
 		//so.value('gost-plugin', _('gost-plugin'));
 		so.value('shadow-tls', _('shadow-tls'));
 		so.value('restls', _('restls'));
+		//so.value('kcptun', _('kcptun'));
 		so.depends('type', 'ss');
 		so.modalonly = true;
 
@@ -557,6 +685,73 @@ return view.extend({
 		so.value('2', _('v2'));
 		so.default = '2';
 		so.depends('uot', '1');
+		so.modalonly = true;
+
+		/* Vless Encryption fields */
+		so = ss.taboption('field_general', form.Flag, 'vless_encryption', _('encryption'));
+		so.default = so.disabled;
+		so.depends('type', 'vless');
+		so.modalonly = true;
+
+		const initVlessEncryptionClientOption = function(o, key) {
+			o.load = function(section_id) {
+				const value = uci.get(data[0], section_id, 'vless_encryption_encryption');
+
+				if (!value)
+					return null;
+
+				return new VlessEncryptionClient(value)[key];
+			}
+			o.onchange = function(ev, section_id, value) {
+				let UIEl = this.section.getUIElement(section_id, 'vless_encryption_encryption');
+				let newpayload = new VlessEncryptionClient(UIEl.getValue()).setKey(key, value);
+
+				UIEl.setValue(newpayload.toString());
+			}
+			o.write = function() {};
+		}
+
+		so = ss.taboption('field_vless_encryption', form.Value, 'vless_encryption_encryption', _('encryption'));
+		so.renderWidget = function(/* ... */) {
+			let node = form.Value.prototype.renderWidget.apply(this, arguments);
+
+			node.firstChild.style.width = '30em';
+
+			return node;
+		}
+		so.rmempty = false;
+		so.depends('vless_encryption', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_vless_encryption', form.ListValue, 'vless_encryption_rtt', _('Client') +' '+ _('RTT'));
+		so.default = hm.vless_encryption.rtts[0][0];
+		hm.vless_encryption.rtts.forEach((res) => {
+			so.value.apply(so, res);
+		})
+		initVlessEncryptionClientOption(so, 'rtt');
+		so.rmempty = false;
+		so.depends('vless_encryption', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_vless_encryption', !hm.pr7558_merged ? hm.DynamicList : form.DynamicList, 'vless_encryption_paddings', _('Paddings'), // @pr7558_merged
+			_('The server and client can set different padding parameters.') + '</br>' +
+			_('In the order of one <code>Padding-Length</code> and one <code>Padding-Interval</code>, infinite concatenation.') + '</br>' +
+			_('The first padding must have a probability of 100% and at least 35 bytes.'));
+		hm.vless_encryption.paddings.forEach((res) => {
+			so.value.apply(so, res);
+		})
+		initVlessEncryptionClientOption(so, 'paddings');
+		so.validate = function(section_id, value) {
+			if (!value)
+				return true;
+
+			if (!value.match(/^\d+(-\d+){2}$/))
+				return _('Expecting: %s').format('^\\d+(-\\d+){2}$');
+
+			return true;
+		}
+		so.allowduplicates = true;
+		so.depends('vless_encryption', '1');
 		so.modalonly = true;
 
 		/* TLS fields */
@@ -649,6 +844,34 @@ return view.extend({
 			_('This is <strong>DANGEROUS</strong>, your traffic is almost like <strong>PLAIN TEXT</strong>! Use at your own risk!'));
 		so.default = so.disabled;
 		so.depends({tls: '1', type: /^(http|socks5|vmess|vless|trojan|anytls|hysteria|hysteria2|tuic)$/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_tls', form.Value, 'tls_cert_path', _('Certificate path') + _(' (mTLS)'),
+			_('The %s public key, in PEM format.').format(_('Client')));
+		so.value('/etc/fchomo/certs/client_publickey.pem');
+		so.depends('tls', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_tls', form.Button, '_upload_cert', _('Upload certificate') + _(' (mTLS)'),
+			_('<strong>Save your configuration before uploading files!</strong>'));
+		so.inputstyle = 'action';
+		so.inputtitle = _('Upload...');
+		so.depends({tls: '1', tls_cert_path: '/etc/fchomo/certs/client_publickey.pem'});
+		so.onclick = L.bind(hm.uploadCertificate, so, _('certificate'), 'client_publickey');
+		so.modalonly = true;
+
+		so = ss.taboption('field_tls', form.Value, 'tls_key_path', _('Key path') + _(' (mTLS)'),
+			_('The %s private key, in PEM format.').format(_('Client')));
+		so.value('/etc/fchomo/certs/client_privatekey.pem');
+		so.depends({tls: '1', tls_cert_path: /.+/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_tls', form.Button, '_upload_key', _('Upload key') + _(' (mTLS)'),
+			_('<strong>Save your configuration before uploading files!</strong>'));
+		so.inputstyle = 'action';
+		so.inputtitle = _('Upload...');
+		so.depends({tls: '1', tls_key_path: '/etc/fchomo/certs/client_privatekey.pem'});
+		so.onclick = L.bind(hm.uploadCertificate, so, _('private key'), 'client_privatekey');
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.Flag, 'tls_ech', _('Enable ECH'));
@@ -763,7 +986,7 @@ return view.extend({
 
 		so = ss.taboption('field_transport', hm.TextValue, 'transport_http_headers', _('HTTP header'));
 		so.placeholder = '{\n  "Host": "example.com",\n  "Connection": [\n    "keep-alive"\n  ]\n}';
-		so.validate = L.bind(hm.validateJson, so);
+		so.validate = hm.validateJson;
 		so.depends({transport_enabled: '1', transport_type: /^(http|ws)$/});
 		so.modalonly = true;
 
@@ -1021,8 +1244,8 @@ return view.extend({
 
 		/* General fields */
 		so = ss.taboption('field_general', form.Value, 'label', _('Label'));
-		so.load = L.bind(hm.loadDefaultLabel, so);
-		so.validate = L.bind(hm.validateUniqueValue, so);
+		so.load = hm.loadDefaultLabel;
+		so.validate = hm.validateUniqueValue;
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.Flag, 'enabled', _('Enable'));
@@ -1041,7 +1264,7 @@ return view.extend({
 
 			switch (option) {
 				case 'file':
-					return uci.get(data[0], section_id, '.name');
+					return `${hm.HM_DIR}/${this.section.sectiontype}/` + uci.get(data[0], section_id, '.name');
 				case 'http':
 					return uci.get(data[0], section_id, 'url');
 				case 'inline':
@@ -1075,7 +1298,7 @@ return view.extend({
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.Value, 'url', _('Provider URL'));
-		so.validate = L.bind(hm.validateUrl, so);
+		so.validate = hm.validateUrl;
 		so.rmempty = false;
 		so.depends('type', 'http');
 		so.modalonly = true;
@@ -1083,13 +1306,13 @@ return view.extend({
 		so = ss.taboption('field_general', form.Value, 'size_limit', _('Size limit'),
 			_('In bytes. <code>%s</code> will be used if empty.').format('0'));
 		so.placeholder = '0';
-		so.validate = L.bind(hm.validateBytesize, so);
+		so.validate = hm.validateBytesize;
 		so.depends('type', 'http');
 
 		so = ss.taboption('field_general', form.Value, 'interval', _('Update interval'),
 			_('In seconds. <code>%s</code> will be used if empty.').format('86400'));
 		so.placeholder = '86400';
-		so.validate = L.bind(hm.validateTimeDuration, so);
+		so.validate = hm.validateTimeDuration;
 		so.depends('type', 'http');
 
 		so = ss.taboption('field_general', form.ListValue, 'proxy', _('Proxy group'),
@@ -1099,14 +1322,14 @@ return view.extend({
 			so.value.apply(so, res);
 		})
 		so.load = L.bind(hm.loadProxyGroupLabel, so, hm.preset_outbound.direct);
-		so.textvalue = L.bind(hm.textvalue2Value, so);
+		so.textvalue = hm.textvalue2Value;
 		//so.editable = true;
 		so.depends('type', 'http');
 
 		so = ss.taboption('field_general', hm.TextValue, 'header', _('HTTP header'),
 			_('Custom HTTP header.'));
 		so.placeholder = '{\n  "User-Agent": [\n    "Clash/v1.18.0",\n    "mihomo/1.18.3"\n  ],\n  "Accept": [\n    //"application/vnd.github.v3.raw"\n  ],\n  "Authorization": [\n    //"token 1231231"\n  ]\n}';
-		so.validate = L.bind(hm.validateJson, so);
+		so.validate = hm.validateJson;
 		so.depends('type', 'http');
 		so.modalonly = true;
 
@@ -1126,7 +1349,7 @@ return view.extend({
 			_('For format see <a target="_blank" href="%s" rel="noreferrer noopener">%s</a>.')
 				.format('https://wiki.metacubex.one/config/proxy-providers/#overrideproxy-name', _('override.proxy-name')));
 		so.placeholder = '{"pattern": "IPLC-(.*?)倍", "target": "iplc x $1"}';
-		so.validate = L.bind(hm.validateJson, so);
+		so.validate = hm.validateJson;
 		so.depends({type: 'inline', '!reverse': true});
 		so.modalonly = true;
 
@@ -1219,7 +1442,7 @@ return view.extend({
 		hm.health_checkurls.forEach((res) => {
 			so.value.apply(so, res);
 		})
-		so.validate = L.bind(hm.validateUrl, so);
+		so.validate = hm.validateUrl;
 		so.retain = true;
 		so.depends({type: 'inline', '!reverse': true});
 		so.modalonly = true;
@@ -1227,7 +1450,7 @@ return view.extend({
 		so = ss.taboption('field_health', form.Value, 'health_interval', _('Health check interval'),
 			_('In seconds. <code>%s</code> will be used if empty.').format('600'));
 		so.placeholder = '600';
-		so.validate = L.bind(hm.validateTimeDuration, so);
+		so.validate = hm.validateTimeDuration;
 		so.depends({type: 'inline', '!reverse': true});
 		so.modalonly = true;
 
@@ -1273,7 +1496,7 @@ return view.extend({
 		so.modalonly = true;
 
 		so = ss.option(form.DummyValue, '_update');
-		so.cfgvalue = L.bind(hm.renderResDownload, so);
+		so.cfgvalue = hm.renderResDownload;
 		so.editable = true;
 		so.modalonly = false;
 		/* Provider END */
@@ -1294,8 +1517,8 @@ return view.extend({
 		ss.hm_lowcase_only = true;
 
 		so = ss.option(form.Value, 'label', _('Label'));
-		so.load = L.bind(hm.loadDefaultLabel, so);
-		so.validate = L.bind(hm.validateUniqueValue, so);
+		so.load = hm.loadDefaultLabel;
+		so.validate = hm.validateUniqueValue;
 		so.modalonly = true;
 
 		so = ss.option(form.Flag, 'enabled', _('Enable'));
@@ -1306,37 +1529,18 @@ return view.extend({
 		so.value('node', _('Proxy Node'));
 		so.value('provider', _('Provider'));
 		so.default = 'node';
-		so.textvalue = L.bind(hm.textvalue2Value, so);
+		so.textvalue = hm.textvalue2Value;
 
-		so = ss.option(form.DummyValue, '_value', _('Value'));
-		so.load = function(section_id) {
-			const type = uci.get(data[0], section_id, 'type');
-			const detour = uci.get(data[0], section_id, 'chain_tail_group') || uci.get(data[0], section_id, 'chain_tail');
-
-			switch (type) {
-				case 'node':
-					return '%s » %s'.format(
-						uci.get(data[0], section_id, 'chain_head'),
-						detour
-					);
-				case 'provider':
-					return '%s » %s'.format(
-						uci.get(data[0], section_id, 'chain_head_sub'),
-						detour
-					);
-				default:
-					return null;
-			}
-		}
+		so = ss.option(CBIBubblesValue, '_value', _('Value'));
 		so.modalonly = false;
 
-		so = ss.option(form.ListValue, 'chain_head_sub', _('Chain head'));
+		so = ss.option(form.ListValue, 'chain_head_sub', _('Chain head') + _(' (Destination)'));
 		so.load = L.bind(hm.loadProviderLabel, so, [['', _('-- Please choose --')]]);
 		so.rmempty = false;
 		so.depends('type', 'provider');
 		so.modalonly = true;
 
-		so = ss.option(form.ListValue, 'chain_head', _('Chain head'),
+		so = ss.option(form.ListValue, 'chain_head', _('Chain head') + _(' (Destination)'),
 			_('Recommended to use UoT node.</br>such as <code>%s</code>.')
 			.format('ss|ssr|vmess|vless|trojan|tuic'));
 		so.load = L.bind(hm.loadNodeLabel, so, [['', _('-- Please choose --')]]);
@@ -1352,13 +1556,13 @@ return view.extend({
 		so.depends('type', 'node');
 		so.modalonly = true;
 
-		so = ss.option(form.ListValue, 'chain_tail_group', _('Chain tail'));
+		so = ss.option(form.ListValue, 'chain_tail_group', _('Chain tail') + _(' (Transit)'));
 		so.load = L.bind(hm.loadProxyGroupLabel, so, [['', _('-- Please choose --')]]);
 		so.rmempty = false;
 		so.depends({chain_tail: /.+/, '!reverse': true});
 		so.modalonly = true;
 
-		so = ss.option(form.ListValue, 'chain_tail', _('Chain tail'),
+		so = ss.option(form.ListValue, 'chain_tail', _('Chain tail') + _(' (Transit)'),
 			_('Recommended to use UoT node.</br>such as <code>%s</code>.')
 			.format('ss|ssr|vmess|vless|trojan|tuic'));
 		so.load = L.bind(hm.loadNodeLabel, so, [['', _('-- Please choose --')]]);

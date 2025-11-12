@@ -33,6 +33,23 @@ function parse_users(cfg) {
 
 	return users;
 }
+
+function parse_vless_encryption(payload, side) {
+	if (isEmpty(payload))
+		return null;
+
+	let content = json(trim(payload));
+
+	let required = join('.', [
+		content.method,
+		content.xormode,
+		side === 'server' ? content.ticket : side === 'client' ? content.rtt : null
+	]);
+
+	return required +
+		(isEmpty(content.paddings) ? '' : '.' + join('.', content.paddings)) + // Optional
+		(isEmpty(content.keypairs) ? '' : '.' + join('.', map(content.keypairs, e => e[side]))); // Required
+}
 /* Config helper END */
 
 /* Main */
@@ -66,8 +83,8 @@ uci.foreach(uciconf, uciserver, (cfg) => {
 			}
 			/*{
 			}*/
-		] : ((cfg.type in ['anytls', 'tuic', 'hysteria2']) ? {
-			/* AnyTLS / Hysteria2 */
+		] : ((cfg.type in ['mieru', 'anytls', 'tuic', 'hysteria2']) ? {
+			/* Mieru / AnyTLS / Hysteria2 */
 			...arrToObj([[cfg.username, cfg.password]]),
 
 			/* Tuic */
@@ -86,6 +103,9 @@ uci.foreach(uciconf, uciserver, (cfg) => {
 		cipher: cfg.shadowsocks_chipher,
 		password: cfg.shadowsocks_password,
 
+		/* Mieru */
+		transport: cfg.mieru_transport,
+
 		/* Tuic */
 		"congestion-controller": cfg.tuic_congestion_controller,
 		"max-idle-time": durationToSecond(cfg.tuic_max_idle_time),
@@ -103,7 +123,7 @@ uci.foreach(uciconf, uciserver, (cfg) => {
 		"padding-scheme": cfg.anytls_padding_scheme,
 
 		/* VMess / VLESS */
-		decryption: cfg.vless_decryption,
+		decryption: cfg.vless_decryption === '1' ? parse_vless_encryption(cfg.vless_encryption_hmpayload, 'server') : null,
 
 		/* Plugin fields */
 		...(cfg.plugin ? {
@@ -142,6 +162,8 @@ uci.foreach(uciconf, uciserver, (cfg) => {
 				certificate: cfg.tls_cert_path,
 				"private-key": cfg.tls_key_path
 			}),
+			"client-auth-type": cfg.tls_client_auth_type,
+			"client-auth-cert": cfg.tls_client_auth_cert_path,
 			"ech-key": cfg.tls_ech_key,
 		} : {}),
 

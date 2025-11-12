@@ -22,6 +22,8 @@ const sharktaikogif = function() {
 
 const pr7558_merged = form.DynamicList.prototype.renderWidget.toString().match('this\.allowduplicates');
 
+const HM_DIR = "/etc/fchomo";
+
 const monospacefonts = [
 	'"Cascadia Code"',
 	'"Cascadia Mono"',
@@ -125,6 +127,7 @@ const inbound_type = [
 	['socks', _('SOCKS')],
 	['mixed', _('Mixed')],
 	['shadowsocks', _('Shadowsocks')],
+	['mieru', _('Mieru')],
 	['vmess', _('VMess')],
 	['vless', _('VLESS')],
 	['trojan', _('Trojan')],
@@ -199,8 +202,9 @@ const proxy_group_type = [
 
 const routing_port_type = [
 	['all', _('All ports')],
-	['common_tcpport', _('Common ports (bypass P2P traffic)'), uci.get('fchomo', 'config', 'common_tcpport') || '20-21,22,53,80,110,143,443,465,853,873,993,995,5222,8080,8443,9418'],
+	['common_tcpport', _('Common ports (bypass P2P traffic)'), uci.get('fchomo', 'config', 'common_tcpport') || '20-21,22,53,80,110,143,443,853,873,993,995,5222,8080,8443,9418'],
 	['common_udpport', _('Common ports (bypass P2P traffic)'), uci.get('fchomo', 'config', 'common_udpport') || '20-21,22,53,80,110,143,443,853,993,995,8080,8443,9418'],
+	['smtp_tcpport', _('SMTP ports'), uci.get('fchomo', 'config', 'smtp_tcpport') || '465,587'],
 	['stun_port', _('STUN ports'), uci.get('fchomo', 'config', 'stun_port') || '3478,19302'],
 	['turn_port', _('TURN ports'), uci.get('fchomo', 'config', 'turn_port') || '5349'],
 	['google_fcm_port', _('Google FCM ports'), uci.get('fchomo', 'config', 'google_fcm_port') || '443,5228-5230'],
@@ -297,6 +301,14 @@ const trojan_cipher_methods = [
 	['chacha20-ietf-poly1305', _('chacha20-ietf-poly1305')]
 ];
 
+const tls_client_auth_types = [
+	['', _('none')],
+	['request', _('Request')],
+	['require-any', _('Require any')],
+	['verify-if-given', _('Verify if given')],
+	['require-and-verify', _('Require and verify')]
+];
+
 const tls_client_fingerprints = [
 	['chrome'],
 	['firefox'],
@@ -306,8 +318,39 @@ const tls_client_fingerprints = [
 	['edge'],
 	['360'],
 	['qq'],
-	['random']
+	['random', _('Random')]
 ];
+
+const vless_encryption = {
+	methods: [
+		['mlkem768x25519plus', _('mlkem768x25519plus')]
+	],
+	xormodes: [
+		['native', 'native', _('Native appearance')],
+		['xorpub', 'xorpub', _('Eliminate encryption header characteristics')],
+		['random', 'random', _('Randomized traffic characteristics')]
+	],
+	tickets: [
+		['600s', '600s', _('Send random ticket of 300s-600s duration for client 0-RTT reuse.')],
+		['300-600s', '300-600s', _('Send random ticket of 300s-600s duration for client 0-RTT reuse.')],
+		['0s', '0s', _('1-RTT only.')]
+	],
+	rtts: [
+		['0rtt', _('0-RTT reuse.') +' '+ _('Requires server support.')],
+		['1rtt', _('1-RTT only.')]
+	],
+	paddings: [
+		['100-111-1111', '100-111-1111: ' + _('After the 1-RTT client/server hello, padding randomly 111-1111 bytes with 100% probability.')],
+		['75-0-111', '75-0-111: ' + _('Wait a random 0-111 milliseconds with 75% probability.')],
+		['50-0-3333', '50-0-3333: ' + _('Send padding randomly 0-3333 bytes with 50% probability.')]
+	],
+	keypairs: {
+		types: [
+			['vless-x25519', _('vless-x25519')],
+			['vless-mlkem768', _('vless-mlkem768')]
+		]
+	}
+};
 
 const vless_flow = [
 	['', _('None')],
@@ -317,11 +360,11 @@ const vless_flow = [
 /* Prototype */
 const CBIGridSection = form.GridSection.extend({
 	modaltitle(/* ... */) {
-		return loadModalTitle.call(this, ...this.hm_modaltitle || [null,null], ...arguments)
+		return loadModalTitle.call(this, ...this.hm_modaltitle || [null,null], ...arguments);
 	},
 
 	sectiontitle(/* ... */) {
-		return loadDefaultLabel.call(this, ...arguments);
+		return loadDefaultLabel.apply(this, arguments);
 	},
 
 	renderSectionAdd(extra_class) {
@@ -405,6 +448,12 @@ const CBIListValue = form.ListValue.extend({
 
 		return frameEl;
 	}
+});
+
+const CBIRichValue = form.Value.extend({
+	__name__: 'CBI.RichValue',
+
+	value: form.RichListValue.prototype.value
 });
 
 const CBIRichMultiValue = form.MultiValue.extend({
@@ -708,6 +757,34 @@ function decodeBase64Str(str) {
 	).join(''));
 }
 
+function encodeBase64Str(str) {
+	if (!str)
+		return null;
+
+	let buf = encodeURIComponent(str).split('%').slice(1).map(h => parseInt(h, 16));
+	return btoa(String.fromCharCode(...buf));
+}
+
+function decodeBase64Bin(str) {
+	if (!str)
+		return null;
+
+	/* Thanks to luci-app-ssr-plus */
+	str = str.replace(/-/g, '+').replace(/_/g, '/');
+	let padding = (4 - (str.length % 4)) % 4;
+	if (padding)
+		str = str + Array(padding + 1).join('=');
+
+	return Array.prototype.map.call(atob(str), c => c.charCodeAt(0)); // OR Uint8Array.fromBase64(str);
+}
+
+function encodeBase64Bin(buf) {
+	if (isEmpty(buf))
+		return null;
+
+	return btoa(String.fromCharCode(...buf)); // OR new Uint8Array(buf).toBase64();
+}
+
 function generateRand(type, length) {
 	let byteArr;
 	if (['base64', 'hex'].includes(type))
@@ -782,6 +859,15 @@ function removeBlankAttrs(res) {
 		return obj;
 	}
 	return res;
+}
+
+function toUciname(str) {
+	if (isEmpty(str))
+		return null;
+
+	const unuciname = new RegExp(/[^a-zA-Z0-9_]+/, "g");
+
+	return str.replace(/[\s\.-]/g, '_').replace(unuciname, '');
 }
 
 function getFeatures() {
@@ -1009,12 +1095,13 @@ function handleGenKey(option) {
 	});
 
 	if (typeof option === 'object') {
-		return callMihomoGenerator(option.type, option.params).then((ret) => {
-			if (ret.result)
-				for (let key in option.result)
-					widget(option.result[key]).value = ret.result[key] ?? '';
+		return callMihomoGenerator(option.type, option.params).then((res) => {
+			if (res.result)
+				option.callback.call(this, res.result).forEach(([k, v]) => {
+					widget(k).value = v ?? '';
+				});
 			else
-				ui.addNotification(null, E('p', _('Failed to generate %s, error: %s.').format(type, ret.error)));
+				ui.addNotification(null, E('p', _('Failed to generate %s, error: %s.').format(type, res.error)));
 		});
 	} else {
 		let password, required_method;
@@ -1037,7 +1124,7 @@ function handleGenKey(option) {
 				break;
 			/* DEFAULT */
 			default:
-				password = generateRand('hex', 16);
+				password = generateRand('hex', 32/2);
 				break;
 		}
 		/* AEAD */
@@ -1110,28 +1197,6 @@ function textvalue2Value(section_id) {
 	return this.vallist[i];
 }
 
-function validatePresetIDs(disoption_list, section_id) {
-	let node;
-	let hm_prefmt = glossary[this.section.sectiontype].prefmt;
-	let preset_ids = [
-		'fchomo_direct_list',
-		'fchomo_proxy_list',
-		'fchomo_china_list',
-		'fchomo_gfw_list'
-	];
-
-	if (preset_ids.map((v) => hm_prefmt.format(v)).includes(section_id)) {
-		disoption_list.forEach(([typ, opt]) => {
-			node = this.section.getUIElement(section_id, opt)?.node;
-			(typ ? node?.querySelector(typ) : node)?.setAttribute(typ === 'textarea' ? 'readOnly' : 'disabled', '');
-		});
-
-		this.map.findElement('id', 'cbi-fchomo-' + section_id)?.lastChild.querySelector('.cbi-button-remove')?.remove();
-	}
-
-	return true;
-}
-
 function validateAuth(section_id, value) {
 	if (!value)
 		return true;
@@ -1196,49 +1261,6 @@ function validateCommonPort(section_id, value) {
 	return true;
 }
 
-function validateJson(section_id, value) {
-	if (!value)
-		return true;
-
-	try {
-		let obj = JSON.parse(value.trim());
-		if (!obj)
-			return _('Expecting: %s').format(_('valid JSON format'));
-	}
-	catch(e) {
-		return _('Expecting: %s').format(_('valid JSON format'));
-	}
-
-	return true;
-}
-
-function validateBase64Key(length, section_id, value) {
-	/* Thanks to luci-proto-wireguard */
-	if (value)
-		if (value.length !== length || !value.match(/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/) || value[length-1] !== '=')
-			return _('Expecting: %s').format(_('valid base64 key with %d characters').format(length));
-
-	return true;
-}
-
-function validateShadowsocksPassword(encmode, section_id, value) {
-	let length = shadowsocks_cipher_length[encmode];
-	if (typeof length !== 'undefined') {
-		length = Math.ceil(length/3)*4;
-		if (encmode.match(/^2022-/)) {
-			return validateBase64Key(length, section_id, value);
-		} else {
-			if (length === 0 && !value)
-				return _('Expecting: %s').format(_('non-empty value'));
-			if (length !== 0 && value.length !== length)
-				return _('Expecting: %s').format(_('valid key length with %d characters').format(length));
-		}
-	} else
-		return true;
-
-	return true;
-}
-
 function validateBytesize(section_id, value) {
 	if (!value)
 		return true;
@@ -1258,18 +1280,27 @@ function validateTimeDuration(section_id, value) {
 	return true;
 }
 
-function validateUniqueValue(section_id, value) {
+function validateJson(section_id, value) {
 	if (!value)
-		return _('Expecting: %s').format(_('non-empty value'));
+		return true;
 
-	let duplicate = false;
-	uci.sections(this.config, this.section.sectiontype, (res) => {
-		if (res['.name'] !== section_id)
-			if (res[this.option] === value)
-				duplicate = true;
-	});
-	if (duplicate)
-		return _('Expecting: %s').format(_('unique value'));
+	try {
+		let obj = JSON.parse(value.trim());
+		if (!obj)
+			return _('Expecting: %s').format(_('valid JSON format'));
+	}
+	catch(e) {
+		return _('Expecting: %s').format(_('valid JSON format'));
+	}
+
+	return true;
+}
+
+function validateUUID(section_id, value) {
+	if (!value)
+		return true;
+	else if (value.match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') === null)
+		return _('Expecting: %s').format(_('valid uuid'));
 
 	return true;
 }
@@ -1290,11 +1321,77 @@ function validateUrl(section_id, value) {
 	return true;
 }
 
-function validateUUID(section_id, value) {
-	if (!value)
+function validateBase64Key(length, section_id, value) {
+	/* Thanks to luci-proto-wireguard */
+	if (value)
+		if (value.length !== length || !value.match(/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/) || value[length-1] !== '=')
+			return _('Expecting: %s').format(_('valid base64 key with %d characters').format(length));
+
+	return true;
+}
+
+function validateMTLSClientAuth(type_option, section_id, value) {
+	// If `client-auth-type` is set to "verify-if-given" or "require-and-verify", `client-auth-cert` must not be empty.
+	const auth_type = this.section.getOption(type_option).formvalue(section_id);
+					//this.section.getUIElement('tls_client_auth_type').getValue();
+	if (!value && ["verify-if-given", "require-and-verify"].includes(auth_type))
+		return _('Expecting: %s').format(_('non-empty value'));
+
+	return true;
+}
+
+function validatePresetIDs(disoption_list, section_id) {
+	let node;
+	let hm_prefmt = glossary[this.section.sectiontype].prefmt;
+	let preset_ids = [
+		'fchomo_direct_list',
+		'fchomo_proxy_list',
+		'fchomo_china_list',
+		'fchomo_gfw_list'
+	];
+
+	if (preset_ids.map((v) => hm_prefmt.format(v)).includes(section_id)) {
+		disoption_list.forEach(([typ, opt]) => {
+			node = this.section.getUIElement(section_id, opt)?.node;
+			(typ ? node?.querySelector(typ) : node)?.setAttribute(typ === 'textarea' ? 'readOnly' : 'disabled', '');
+		});
+
+		this.map.findElement('id', 'cbi-fchomo-' + section_id)?.lastChild.querySelector('.cbi-button-remove')?.remove();
+	}
+
+	return true;
+}
+
+function validateShadowsocksPassword(encmode, section_id, value) {
+	let length = shadowsocks_cipher_length[encmode];
+	if (typeof length !== 'undefined') {
+		length = Math.ceil(length/3)*4;
+		if (encmode.match(/^2022-/)) {
+			return validateBase64Key.call(this, length, section_id, value);
+		} else {
+			if (length === 0 && !value)
+				return _('Expecting: %s').format(_('non-empty value'));
+			if (length !== 0 && value.length !== length)
+				return _('Expecting: %s').format(_('valid key length with %d characters').format(length));
+		}
+	} else
 		return true;
-	else if (value.match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') === null)
-		return _('Expecting: %s').format(_('valid uuid'));
+
+	return true;
+}
+
+function validateUniqueValue(section_id, value) {
+	if (!value)
+		return _('Expecting: %s').format(_('non-empty value'));
+
+	let duplicate = false;
+	uci.sections(this.config, this.section.sectiontype, (res) => {
+		if (res['.name'] !== section_id)
+			if (res[this.option] === value)
+				duplicate = true;
+	});
+	if (duplicate)
+		return _('Expecting: %s').format(_('unique value'));
 
 	return true;
 }
@@ -1425,6 +1522,7 @@ return baseclass.extend({
 	sharkaudio,
 	sharktaikogif,
 	pr7558_merged,
+	HM_DIR,
 	monospacefonts,
 	checkurls,
 	stunserver,
@@ -1446,7 +1544,9 @@ return baseclass.extend({
 	shadowsocks_cipher_methods,
 	shadowsocks_cipher_length,
 	trojan_cipher_methods,
+	tls_client_auth_types,
 	tls_client_fingerprints,
+	vless_encryption,
 	vless_flow,
 
 	/* Prototype */
@@ -1454,6 +1554,7 @@ return baseclass.extend({
 	DynamicList: CBIDynamicList,
 	StaticList: CBIStaticList,
 	ListValue: CBIListValue,
+	RichValue: CBIRichValue,
 	RichMultiValue: CBIRichMultiValue,
 	TextValue: CBITextValue,
 	GenValue: CBIGenValue,
@@ -1464,15 +1565,20 @@ return baseclass.extend({
 	bool2str,
 	calcStringMD5,
 	decodeBase64Str,
+	encodeBase64Str,
+	decodeBase64Bin,
+	encodeBase64Bin,
 	generateRand,
 	getValue,
 	json2yaml,
 	yaml2json,
 	isEmpty,
 	removeBlankAttrs,
+	toUciname,
 	getFeatures,
 	getServiceStatus,
 	getClashAPI,
+	// load
 	loadDefaultLabel,
 	loadModalTitle,
 	loadProxyGroupLabel,
@@ -1480,6 +1586,7 @@ return baseclass.extend({
 	loadProviderLabel,
 	loadRulesetLabel,
 	loadSubRuleGroup,
+	// render
 	renderStatus,
 	updateStatus,
 	getDashURL,
@@ -1488,19 +1595,23 @@ return baseclass.extend({
 	handleReload,
 	handleRemoveIdles,
 	textvalue2Value,
-	validatePresetIDs,
+	// validate
 	validateAuth,
 	validateAuthUsername,
 	validateAuthPassword,
 	validateCommonPort,
-	validateJson,
-	validateBase64Key,
-	validateShadowsocksPassword,
 	validateBytesize,
 	validateTimeDuration,
-	validateUniqueValue,
-	validateUrl,
+	validateJson,
 	validateUUID,
+	validateUrl,
+	// validate with bind this
+	validateBase64Key,
+	validateMTLSClientAuth,
+	validatePresetIDs,
+	validateShadowsocksPassword,
+	validateUniqueValue,
+	// file operations
 	lsDir,
 	readFile,
 	writeFile,

@@ -9,7 +9,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qmi_wwan_q
 PKG_VERSION:=1.2.9
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 include $(INCLUDE_DIR)/kernel.mk
 include $(INCLUDE_DIR)/package.mk
@@ -26,11 +26,17 @@ define KernelPackage/qmi_wwan_q/description
   Quectel Linux USB QMI WWAN Driver
 endef
 
+EXTRA_CFLAGS+= \
+	-Wno-unused-function \
+	-Wno-missing-prototypes \
+	-Wno-missing-declarations
+
 MAKE_OPTS:= \
 	ARCH="$(LINUX_KARCH)" \
 	CROSS_COMPILE="$(TARGET_CROSS)" \
 	CXXFLAGS="$(TARGET_CXXFLAGS)" \
 	M="$(PKG_BUILD_DIR)" \
+	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 	$(EXTRA_KCONFIG)
 
 define Build/Prepare

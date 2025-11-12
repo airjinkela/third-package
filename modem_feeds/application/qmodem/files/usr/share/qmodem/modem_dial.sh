@@ -139,6 +139,7 @@ update_config()
     config_get platform $modem_config platform
     config_get force_set_apn $modem_config force_set_apn
     config_get pdp_index $modem_config pdp_index
+    [ -n "$pdp_index" ] && userset_pdp_index="1" || userset_pdp_index="0"
     config_get suggest_pdp_index $modem_config suggest_pdp_index
     [ -z "$suggest_pdp_index"] && suggest_pdp_index=$(get_platform_suggest_pdp_index)
     [ -z "$pdp_index" ] && pdp_index=$suggest_pdp_index
@@ -147,6 +148,7 @@ update_config()
     config_get en_bridge $modem_config en_bridge
     config_get do_not_add_dns $modem_config do_not_add_dns
     config_get dns_list $modem_config dns_list
+    config_get huawei_dial_mode $modem_config huawei_dial_mode
     config_get global_dial main enable_dial
     # config_get ethernet_5g u$modem_config ethernet 转往口获取命令更新，待测试
     config_foreach get_associate_ethernet_by_path modem-slot
@@ -156,7 +158,7 @@ update_config()
     update_sim_slot
     case $sim_slot in
         1)
-        config_get apn $modem_config apn "auto"
+        config_get apn $modem_config apn
         config_get username $modem_config username
         config_get password $modem_config password
         config_get auth $modem_config auth
@@ -168,7 +170,7 @@ update_config()
         config_get password $modem_config password2
         config_get auth $modem_config auth2
         config_get pincode $modem_config pincode2
-        [ -z "$apn" ] && config_get apn $modem_config apn "auto"
+        [ -z "$apn" ] && config_get apn $modem_config apn
         [ -z "$username" ] && config_get username $modem_config username
         [ -z "$password" ] && config_get password $modem_config password
         [ -z "$auth" ] && config_get auth $modem_config auth
@@ -589,6 +591,13 @@ wwan_hang()
 
 ecm_hang()
 {
+    m_debug "ecm_hang"
+    auto_dial_hang_fail=0
+    auto_dial_hang
+    auto_dial_hang_fail=$?
+    if [ $auto_dial_hang_fail -eq 0 ]; then
+        return
+    fi
     case "$manufacturer" in
         "quectel")
             at_command="AT+QNETDEVCTL=$pdp_index,2,1"
@@ -620,6 +629,19 @@ ecm_hang()
     fastat "${at_port}" "${at_command}"
     [ -n "$delay" ] && sleep "$delay"
 }
+
+auto_dial_stop(){
+    m_debug "stop auto dial"
+    case "$manufacturer" in
+        "huawei")
+        case "$platform" in
+            "unisoc")
+            ;;
+        esac
+        ;;
+    esac
+}
+
 
 hang()
 {
@@ -673,7 +695,7 @@ qmi_dial()
     if [ "$network_bridge" = "1" ]; then
         cmd_line="$cmd_line -b"
     fi
-    if [ -n "$pdp_index" ]; then
+    if [ -n "$pdp_index" ] && [ "$userset_pdp_index" = "1" ]; then
         cmd_line="$cmd_line -n $pdp_index"
     fi
     if [ "$manufacturer" = "telit" ];then
@@ -722,10 +744,11 @@ qmi_dial()
         [ -n "$metric" ] && cmd_line="$cmd_line"
     fi
     cmd_line="$cmd_line -f $log_file"
-    m_debug "dialing $cmd_line"
-    exec $cmd_line
-    
-    
+    while true; do
+        m_debug "dialing: $cmd_line"
+        $cmd_line
+        m_debug "quectel-CM exited, retrying dial"
+    done
 }
 
 at_dial()
@@ -858,6 +881,82 @@ at_dial()
         	at "$at_port" "$at_command"
 		 	;;
 	esac
+}
+
+at_auto_dial()
+{
+    case $manufacturer in
+        "huawei")
+            case $platform in
+                "unisoc")
+                    huawei_auto_dial_unisoc
+                    return 0
+                    ;;
+            esac
+            ;;
+    esac
+    return 1
+}
+
+huawei_auto_dial_unisoc()
+{
+    m_debug "huawei_auto_dial: auto dial(no monitor)"
+    m_debug "huawei_auto_dial: vendor:$manufacturer; platform:$platform; driver:$driver; apn:$apn; command:$at_command; pdp_index:$pdp_index; huawei_dial_mode:$huawei_dial_mode; at_port:$at_port"
+    # dial prepare
+    cgdcont_command="AT+CGDCONT=$pdp_index,\"$pdp_type\",\"$apn\""
+    at "$at_port" "$cgdcont_command"
+    # get current auto dial setting
+    at_command='AT^SETAUTODIAL?'
+    at_res=$(at "$at_port" "$at_command" | grep 'SETAUTO')
+    # return ^SETAUTODAIL:1,x
+    current_setting=${at_res##*:}
+    dial_status=$(echo "$current_setting" | cut -d ',' -f 1)
+    current_dial_mode=$(echo "$current_setting" | cut -d ',' -f 2)
+    m_debug "current dial status: $dial_status, current dial mode: $current_dial_mode"
+    # if dial stat is disabled, or when huawei_dial_mode is not empty and current dial mode is not equal to huawei_dial_mode, enable dial
+    if [ "$dial_status" = "0" ] || [ ! -z "$huawei_dial_mode" ] && [ "$current_dial_mode" != "$huawei_dial_mode" ]; then
+        [ -n "$huawei_dial_mode" ] && dial_mode=",$huawei_dial_mode" || dial_mode=",4"
+        at_command="AT^SETAUTODIAL=1$dial_mode"
+        at "$at_port" "$at_command"
+    fi
+}
+
+auto_dial_hang_huawei_unisoc()
+{
+    m_debug "huawei_auto_hang"
+    at_command='AT^SETAUTODIAL?'
+    current_setting=$(at "$at_port" "$at_command" | grep 'SETAUTO')
+    # return ^SETAUTODAIL:1,x
+    current_setting=${current_setting##*:}
+    dial_status=$(echo "$current_setting" | cut -d ',' -f 1)
+    if [ "$dial_status" = "1" ]; then 
+        at_command="AT^SETAUTODIAL=0"
+        at "$at_port" "$at_command"
+        m_debug "huawei_at_hang: auto hang done"
+        m_debug "huawei_at_hang: turning radio off"
+        off_cmd="AT+CFUN=0"
+        on_cmd="AT+CFUN=1"
+        at "$at_port" "$off_cmd"
+        m_debug "huawei_at_hang: turning radio on"
+        at "$at_port" "$on_cmd"
+        return 0
+    fi
+    return 1
+}
+
+auto_dial_hang(){
+    m_debug "auto_dial_hang"
+    case "$manufacturer" in 
+        "huawei")
+            case "$platform" in
+                "unisoc")
+                    auto_dial_hang_huawei_unisoc
+                    return $?
+                    ;;
+            esac
+            ;;
+    esac
+    return 1
 }
 
 ip_change_fm350()
@@ -1014,6 +1113,16 @@ check_logfile_line()
 unexpected_response_count=0
 at_dial_monitor()
 {
+    #check if support auto dial
+    auto_dial_support=0
+    at_auto_dial
+    auto_dial_support=$?
+    if [ $auto_dial_support -eq 0 ]; then
+        m_debug "dialing service is managed by modem(auto dial), do not need monitor"
+        while true; do
+            sleep 30
+        done
+    fi
     at_dial
     ipv4_cache=$ipv4
     ipv6_cache=$ipv6

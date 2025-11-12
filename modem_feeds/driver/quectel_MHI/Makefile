@@ -9,7 +9,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pcie_mhi
 PKG_VERSION:=1.3.8
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 include $(INCLUDE_DIR)/kernel.mk
 include $(INCLUDE_DIR)/package.mk
@@ -25,11 +25,17 @@ define KernelPackage/pcie_mhi/description
   Kernel module for register a custom pciemhi platform device.
 endef
 
+EXTRA_CFLAGS+= \
+	-Wno-unused-function \
+	-Wno-missing-prototypes \
+	-Wno-missing-declarations
+
 MAKE_OPTS:= \
 	ARCH="$(LINUX_KARCH)" \
 	CROSS_COMPILE="$(TARGET_CROSS)" \
 	CXXFLAGS="$(TARGET_CXXFLAGS)" \
 	M="$(PKG_BUILD_DIR)" \
+	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 	$(EXTRA_KCONFIG)
 
 define Build/Prepare

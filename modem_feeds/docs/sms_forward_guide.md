@@ -74,6 +74,13 @@
 - `$sms_time`: 时间戳
 - `$raw_pdu`: 原始PDU数据
 
+实例脚本示例：
+```shell
+FROM="${SMS_SENDER:-unknown}"
+RECEIVE_TIME="${SMS_TIME:-$(date '+%Y-%m-%d %H:%M:%S')}"
+MSG="${SMS_CONTENT:-<empty>}"
+```
+
 示例脚本请参考: `/usr/share/qmodem/sms_forward_example.sh`
 
 ## 服务管理

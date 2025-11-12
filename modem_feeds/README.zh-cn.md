@@ -1,5 +1,11 @@
 # QModem (中文)
 
+# 针对部分使用webui的用户和开发者的特别提示：
+模组端的atd是一个古老的设计，并且不同厂商有非常不同的实现，在兼容性和并发、返回完整性甚至atd服务的稳定性上都表现较差。
+因此当你同时使用 webui 和 qmodem （或者多个不同模组管理插件）时，会增加同时发送at指令的概率，造成 信息不全、atd服务崩溃（这通常是atd开发者的问题） 导致乱码、at卡死、模组掉线。
+如果你是用户，建议二选一，不要同时使用多个模组管理插件
+如果你是 webui 的开发者，我推荐你使用我开发的 ubus atd 插件来代替在模组端使用自建的 atd 服务，这样可以让qmodem兼容你的项目，并且节省您开发时间 [参考说明](docs/rpcd-at-daemon-userguide-cn.md)
+
 **中文 README** | **[English README](README.md)**
 
 [![使用 OpenWrt SDK 自动编译](https://github.com/FUjr/modem_feeds/actions/workflows/main.yml/badge.svg)](https://github.com/FUjr/modem_feeds/actions/workflows/main.yml)
@@ -18,23 +24,7 @@
 
 有关功能和能力的完整列表，请参阅[用户指南](docs/user-guide.zh-cn.md)。
 
-## 🏠 相关项目：Home Assistant 集成
-
-想要在 Home Assistant 中监控您的 OpenWrt 路由器和 QModem 状态吗？请查看我们的配套项目：
-
-### [OpenWrt Ubus Integration for Home Assistant](https://github.com/FUjr/homeassistant-openwrt-ubus)
-
-一个自定义的 Home Assistant 集成，通过 ubus 接口连接到 OpenWrt 路由器，提供：
-
-- **📱 设备跟踪**: 实时监控无线设备和 DHCP 客户端
-- **📊 系统监控**: 跟踪正常运行时间、负载平均值、内存使用情况
-- **📡 QModem 支持**: 监控 4G/LTE 调制解调器状态、信号强度和连接详情
-- **📶 无线站点**: 跟踪站点关联和信号信息
-- **🔧 简易设置**: 通过 Home Assistant UI 进行简单配置
-
-![QModem Integration](https://github.com/FUjr/homeassistant-openwrt-ubus/blob/main/imgs/qmodem_info.png)
-
-完美地将您的 QModem 驱动的 OpenWrt 路由器集成到智能家居生态系统中！
+## 相关项目： Home Assistant 的 OpenWrt 管理插件
 
 [**在 GitHub 上查看 →**](https://github.com/FUjr/homeassistant-openwrt-ubus)
 

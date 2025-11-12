@@ -31,10 +31,10 @@ function parseRulesetYaml(field, name, cfg) {
 }
 
 function parseRulesetLink(section_type, uri) {
-	let config,
-		filefmt = new RegExp(/^(text|yaml|mrs)$/),
-		filebehav = new RegExp(/^(domain|ipcidr|classical)$/),
-		unuciname = new RegExp(/[^a-zA-Z0-9_]+/, "g");
+	const filefmt = new RegExp(/^(text|yaml|mrs)$/);
+	const filebehav = new RegExp(/^(domain|ipcidr|classical)$/);
+
+	let config;
 
 	uri = uri.split('://');
 	if (uri[0] && uri[1]) {
@@ -46,8 +46,7 @@ function parseRulesetLink(section_type, uri) {
 			var behavior = url.searchParams.get('behav');
 			var interval = url.searchParams.get('sec');
 			var rawquery = url.searchParams.get('rawq');
-			var name = decodeURI(url.pathname).split('/').pop()
-				.replace(/[\s\.-]/g, '_').replace(unuciname, '');
+			var name = hm.toUciname(decodeURI(url.pathname).split('/').pop());
 
 			if (filefmt.test(format) && filebehav.test(behavior)) {
 				let fullpath = (url.username ? url.username + '@' : '') + url.host + url.pathname + (rawquery ? '?' + decodeURIComponent(rawquery) : '');
@@ -69,8 +68,7 @@ function parseRulesetLink(section_type, uri) {
 			var behavior = url.searchParams.get('behav');
 			var filler = url.searchParams.get('fill');
 			var path = decodeURI(url.pathname);
-			var name = path.split('/').pop()
-				.replace(/[\s\.-]/g, '_').replace(unuciname, '');
+			var name = hm.toUciname(path.split('/').pop());
 
 			if (filefmt.test(format) && filebehav.test(behavior)) {
 				config = {
@@ -188,7 +186,7 @@ return view.extend({
 			o.placeholder = 'http(s)://github.com/ACL4SSR/ACL4SSR/raw/refs/heads/master/Clash/Providers/BanAD.yaml?fmt=yaml&behav=classical&rawq=good%3Djob#BanAD\n' +
 							'file:///example.txt?fmt=text&behav=domain&fill=LmNuCg#CN%20TLD\n' +
 							'inline://LSAnLmhrJwoK?behav=domain#HK%20TLD\n';
-			o.handleFn = L.bind(function(textarea) {
+			o.handleFn = function(textarea) {
 				let input_links = textarea.getValue().trim().split('\n');
 				let imported_count = 0;
 
@@ -216,7 +214,7 @@ return view.extend({
 					return this.save();
 				else
 					return ui.hideModal();
-			}, o);
+			}
 
 			return o.render();
 		}
@@ -246,14 +244,14 @@ return view.extend({
 		/* Import mihomo config and Import rule-set links and Remove idle files end */
 
 		o = s.option(form.Value, 'label', _('Label'));
-		o.load = L.bind(hm.loadDefaultLabel, o);
-		o.validate = L.bind(hm.validateUniqueValue, o);
+		o.load = hm.loadDefaultLabel;
+		o.validate = hm.validateUniqueValue;
 		o.modalonly = true;
 
 		o = s.option(form.Flag, 'enabled', _('Enable'));
 		o.default = o.enabled;
 		o.editable = true;
-		o.validate = function(section_id, value) {
+		o.validate = function(/* ... */) {
 			return hm.validatePresetIDs.call(this, [
 				['select', 'type'],
 				['select', 'behavior'],
@@ -311,7 +309,7 @@ return view.extend({
 
 			switch (option) {
 				case 'file':
-					return uci.get(data[0], section_id, '.name');
+					return `${hm.HM_DIR}/${this.section.sectiontype}/` + uci.get(data[0], section_id, '.name');
 				case 'http':
 					return uci.get(data[0], section_id, 'url');
 				case 'inline':
@@ -345,7 +343,7 @@ return view.extend({
 		o.modalonly = true;
 
 		o = s.option(form.Value, 'url', _('Rule set URL'));
-		o.validate = L.bind(hm.validateUrl, o);
+		o.validate = hm.validateUrl;
 		o.rmempty = false;
 		o.depends('type', 'http');
 		o.modalonly = true;
@@ -353,13 +351,13 @@ return view.extend({
 		o = s.option(form.Value, 'size_limit', _('Size limit'),
 			_('In bytes. <code>%s</code> will be used if empty.').format('0'));
 		o.placeholder = '0';
-		o.validate = L.bind(hm.validateBytesize, o);
+		o.validate = hm.validateBytesize;
 		o.depends('type', 'http');
 
 		o = s.option(form.Value, 'interval', _('Update interval'),
 			_('In seconds. <code>%s</code> will be used if empty.').format('259200'));
 		o.placeholder = '259200';
-		o.validate = L.bind(hm.validateTimeDuration, o);
+		o.validate = hm.validateTimeDuration;
 		o.depends('type', 'http');
 
 		o = s.option(form.ListValue, 'proxy', _('Proxy group'),
@@ -369,12 +367,12 @@ return view.extend({
 			o.value.apply(o, res);
 		})
 		o.load = L.bind(hm.loadProxyGroupLabel, o, hm.preset_outbound.direct);
-		o.textvalue = L.bind(hm.textvalue2Value, o);
+		o.textvalue = hm.textvalue2Value;
 		//o.editable = true;
 		o.depends('type', 'http');
 
 		o = s.option(form.DummyValue, '_update');
-		o.cfgvalue = L.bind(hm.renderResDownload, o);
+		o.cfgvalue = hm.renderResDownload;
 		o.editable = true;
 		o.modalonly = false;
 		/* Rule set END */
