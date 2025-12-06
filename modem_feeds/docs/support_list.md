@@ -3,7 +3,7 @@ Model | Platform | USB  | PCIe
 --- | --- | --- | ---
 s10 | hisilicon |✔ usb(rndis) | ✘
 mt5700m-cn | hisilicon |✔ usb(ecm,ncm) | ✘
-mt5710m_cn | hisilicon |✔ usb(ecm,ncm) | ✘
+mt5710_cn | hisilicon |✔ usb(ecm,ncm) | ✘
 mh5000-31 | hisilicon |✔ usb(ecm) | ✘
 mh5000-82 | unisoc |✔ usb(ecm,ncm,rndis) | ✘
 mh5000-82m | unisoc |✔ usb(ecm,ncm,rndis) | ✘
@@ -43,6 +43,7 @@ rg501q-eu | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gob
 rg520n-eu | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gobinet,mbim)
 rg520n-eb | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gobinet,mbim)
 mh8001-eu | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gobinet,mbim)
+rg520f-eu | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gobinet,mbim)
 rg520f-eb | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gobinet,mbim)
 rg520f-jo | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gobinet,mbim)
 rg530f-na | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,gobinet,mbim)
@@ -61,6 +62,7 @@ fm350r-gl | mediatek |✔ usb(rndis) | ✔ pcie(mbim)
 rw350r-gl | mediatek |✔ usb(rndis) | ✔ pcie(mbim)
 fm150-ae | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,mbim)
 fm160-cn | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
+fm160-eau | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
 fm160-na | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
 fm190w-gl | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi)
 l610-eu | unisoc |✔ usb(ecm,rndis,ncm) | ✘

@@ -1,5 +1,31 @@
 # QModem (English)
 
+Those who wish to use a pure JS Luci (test version):
+
+Due to popular demand, QModem has introduced a pure JS Luci frontend, which eliminates the dependency on luci-compat and reduces many compatibility issues after Luci 21.
+
+### Usage:
+- Update feeds and install the newly added packages.
+- Navigate to Luci -> Application -> luci-app-qmodem.
+- Remove luci-app-qmodem and luci-app-qmodem-sms/mwam/ttl, etc.
+- Select luci-app-qmodem-next.
+
+### Feature Changes:
+1. Optimized the dial-up configuration interface, redesigned the display logic for dial-up logs and status.
+2. Improved SMS functionality, currently not split into a separate feature. SMS is presented in a dialog box, automatically exported to the router's file system, and supports recording sent messages.
+3. Enhanced the AT debugging and advanced module functionality interface.
+4. Improved all settings interfaces.
+5. Used scripts + AI to extract translatable strings, significantly improving translation coverage.
+6. SMS forwarding: Read messages are also forwarded.
+
+### Compatibility and Limitations:
+1. Feature removal: MWAN and TTL features are indefinitely removed in this version.
+2. SMS stability: To save development time, the current SMS backend implementation is relatively simple, using JSON as the database.
+3. SMS management: Does not support setting SMS storage location or deleting SMS in the UI. Only automatic deletion is available.
+4. SMS display: Known issue: SMS concatenation is based on timestamp + reference ID, but due to unreliable timestamps provided by some operators and modules, long messages cannot be concatenated correctly.
+
+---
+
 # Important Notice for WebUI Users and Developers:
 The ATD (AT Daemon) on the modem side is a legacy design with inconsistent implementations across different vendors, resulting in poor compatibility, concurrency issues, incomplete responses, and unstable service behavior.
 When using WebUI and QModem (or multiple modem management plugins) simultaneously, concurrent AT command execution can lead to incomplete information, ATD service crashes (typically due to vendor implementation issues), garbled output, AT command timeouts, and modem disconnections.

@@ -3,28 +3,31 @@
 package redirect
 
 import (
-	"fmt"
+	"errors"
 	"net"
 
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/rewrite"
-	"github.com/sunbk201/ua3f/internal/server/utils"
+	"github.com/sunbk201/ua3f/internal/server/base"
+	"github.com/sunbk201/ua3f/internal/statistics"
 )
 
 type Server struct {
-	cfg *config.Config
-	rw  *rewrite.Rewriter
+	base.Server
 }
 
-func New(cfg *config.Config, rw *rewrite.Rewriter) *Server {
+func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
 	return &Server{
-		cfg: cfg,
-		rw:  rw,
+		Server: base.Server{
+			Cfg:      cfg,
+			Rewriter: rw,
+			Recorder: rc,
+		},
 	}
 }
 
 func (s *Server) Start() error {
-	return fmt.Errorf("REDIRECT Mode is only supported on Linux")
+	return errors.New("redirect server is only supported on linux")
 }
 
 func (s *Server) Close() error {
@@ -32,10 +35,7 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) HandleClient(client net.Conn) {
-	defer client.Close()
-}
-
-func (s *Server) ForwardTCP(client, target net.Conn, _ string) {
-	go utils.CopyHalf(client, target)
-	go utils.CopyHalf(target, client)
+	defer func() {
+		_ = client.Close()
+	}()
 }

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=UA3F
-PKG_VERSION:=1.8.0
+PKG_VERSION:=2.1.1
 PKG_RELEASE:=1
 
 # PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
@@ -17,7 +17,7 @@ PKG_BUILD_PARALLEL:=1
 PKG_BUILD_FLAGS:=no-mips16
 
 GO_PKG:=github.com/sunbk201/ua3f
-GO_PKG_LDFLAGS_X:= main.version=$(PKG_VERSION)
+GO_PKG_LDFLAGS_X:=main.appVersion=v$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
@@ -28,15 +28,16 @@ define Package/ua3f
 	SUBMENU:=Web Servers/Proxies
 	TITLE:=Advanced HTTP Header Rewriting Tool
 	URL:=https://github.com/SunBK201/UA3F
-	DEPENDS:=$(GO_ARCH_DEPENDS) +luci-compat +ipset +iptables +iptables-mod-tproxy +iptables-mod-extra +iptables-mod-nat-extra +kmod-ipt-conntrack +iptables-mod-ipopt +iptables-mod-nfqueue +iptables-mod-conntrack-extra +kmod-nf-conntrack-netlink
+	DEPENDS:=$(GO_ARCH_DEPENDS) +luci-compat +ipset +iptables +iptables-mod-tproxy +iptables-mod-extra +iptables-mod-ipopt +iptables-mod-nfqueue +iptables-mod-conntrack-extra +kmod-nf-conntrack-netlink
 endef
 
 define Package/ua3f/description
-	Advanced HTTP Header Rewriting Tool.
+	Advanced HTTP Header Rewriting Tool
 endef
 
 define Build/Prepare
 	$(CP) ../src/* $(PKG_BUILD_DIR)
+	$(CP) ./files $(PKG_BUILD_DIR)/
 	po2lmo ./po/zh_cn/ua3f.po $(PKG_BUILD_DIR)/ua3f.zh-cn.lmo
 endef
 
@@ -54,9 +55,26 @@ define Package/ua3f/install
 	$(INSTALL_BIN) ./files/ua3f.init $(1)/etc/init.d/ua3f
 	$(INSTALL_DIR) $(1)/etc/config/
 	$(INSTALL_CONF) ./files/ua3f.uci $(1)/etc/config/ua3f
+	$(INSTALL_DIR) $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) ./files/uci-defaults $(1)/etc/uci-defaults/luci-ua3f
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/ua3f.zh-cn.lmo $(1)/usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo
 	$(CP) $(PKG_BUILD_DIR)/files/luci/* $(1)/usr/lib/lua/luci/
+endef
+
+define Package/ua3f/postrm
+#!/bin/sh
+uci -q set ua3f.enabled.enabled=0
+uci -q commit ua3f
+[ -f "/etc/config/ucitrack" ] && {
+	uci -q delete ucitrack.ua3f
+	uci -q commit ucitrack
+}
+rm -rf /var/log/ua3f >/dev/null 2>&1
+rm -rf /usr/lib/lua/luci/model/cbi/ua3f >/dev/null 2>&1
+rm -rf /usr/lib/lua/luci/model/cbi/ua3f.lua >/dev/null 2>&1
+rm -rf /usr/lib/lua/luci/controller/ua3f.lua >/dev/null 2>&1
+rm -rf /usr/lib/lua/luci/view/ua3f >/dev/null 2>&1
 endef
 
 $(eval $(call GoBinPackage,ua3f))

@@ -3,34 +3,35 @@
 package netlink
 
 import (
+	"log/slog"
+
 	nfq "github.com/florianl/go-nfqueue/v2"
 	"github.com/google/gopacket/layers"
-	"github.com/sirupsen/logrus"
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/netfilter"
+	"github.com/sunbk201/ua3f/internal/server/base"
 	"sigs.k8s.io/knftables"
 )
 
 type Server struct {
 	netfilter.Firewall
 	cfg       *config.Config
-	nfqServer *netfilter.NfqueueServer
-	nftable   *knftables.Table
+	nfqServer *base.NfqueueServer
 }
 
 func New(cfg *config.Config) *Server {
 	s := &Server{
 		cfg: cfg,
-		nfqServer: &netfilter.NfqueueServer{
+		nfqServer: &base.NfqueueServer{
 			QueueNum: netfilter.HELPER_QUEUE,
-		},
-		nftable: &knftables.Table{
-			Name:   "UA3F_HELPER",
-			Family: knftables.InetFamily,
 		},
 	}
 	s.nfqServer.HandlePacket = s.handlePacket
 	s.Firewall = netfilter.Firewall{
+		Nftable: &knftables.Table{
+			Name:   "UA3F_HELPER",
+			Family: knftables.InetFamily,
+		},
 		NftSetup:   s.nftSetup,
 		NftCleanup: s.nftCleanup,
 		IptSetup:   s.iptSetup,
@@ -39,38 +40,37 @@ func New(cfg *config.Config) *Server {
 	return s
 }
 
-func (s *Server) Setup() (err error) {
+func (s *Server) Start() (err error) {
 	err = s.Firewall.Setup(s.cfg)
 	if err != nil {
-		logrus.Errorf("s.Firewall.Setup: %v", err)
+		slog.Error("s.Firewall.Setup", slog.Any("error", err))
 		return err
 	}
-	return nil
-}
-
-func (s *Server) Start() (err error) {
-	if s.cfg.SetTTL || s.cfg.DelTCPTimestamp || s.cfg.SetIPID {
-		logrus.Info("Packet modification features enabled")
+	slog.Info("Packet modification configuration", slog.Bool("ttl", s.cfg.SetTTL), slog.Bool("tcpts", s.cfg.DelTCPTimestamp), slog.Bool("ipid", s.cfg.SetIPID), slog.Bool("tcp_init_window", s.cfg.SetTCPInitialWindow))
+	if s.cfg.DelTCPTimestamp || s.cfg.SetTCPInitialWindow || s.cfg.SetIPID {
 		return s.nfqServer.Start()
 	}
 	return nil
 }
 
-func (s *Server) Close() (err error) {
-	err = s.Firewall.Cleanup()
-	if err != nil {
-		return err
-	}
-	return nil
+func (s *Server) Close() error {
+	err := s.Firewall.Cleanup()
+	s.nfqServer.Close()
+	return err
 }
 
 // handlePacket processes a single NFQUEUE packet
-func (s *Server) handlePacket(packet *netfilter.Packet) {
+func (s *Server) handlePacket(packet *base.Packet) {
 	nf := s.nfqServer.Nf
 
 	modified := false
-	if s.cfg.DelTCPTimestamp && packet.TCP != nil {
-		modified = s.clearTCPTimestamp(packet.TCP) || modified
+	if packet.TCP != nil {
+		if s.cfg.DelTCPTimestamp {
+			modified = s.clearTCPTimestamp(packet.TCP) || modified
+		}
+		if s.cfg.SetTCPInitialWindow {
+			modified = s.setInitialTCPWindow(packet.TCP) || modified
+		}
 	}
 	if s.cfg.SetIPID {
 		modified = s.zeroIPID(packet) || modified
@@ -79,12 +79,12 @@ func (s *Server) handlePacket(packet *netfilter.Packet) {
 	if modified {
 		newPacket, err := packet.Serialize()
 		if err != nil {
-			logrus.Errorf("packet.Serialize: %v", err)
+			slog.Error("packet.Serialize", slog.Any("error", err))
 			_ = nf.SetVerdict(*packet.A.PacketID, nfq.NfAccept)
 			return
 		}
 		if err := nf.SetVerdictWithOption(*packet.A.PacketID, nfq.NfAccept, nfq.WithAlteredPacket(newPacket)); err != nil {
-			logrus.Errorf("nf.SetVerdictWithOption: %v", err)
+			slog.Error("nf.SetVerdictWithOption", slog.Any("error", err))
 			_ = nf.SetVerdict(*packet.A.PacketID, nfq.NfAccept)
 		}
 	} else {
@@ -116,9 +116,21 @@ func (s *Server) clearTCPTimestamp(tcp *layers.TCP) bool {
 	return modified
 }
 
+// setInitialTCPWindow sets the TCP initial window size to 65535 for SYN packets
+func (s *Server) setInitialTCPWindow(tcp *layers.TCP) bool {
+	if !(tcp.SYN && !tcp.ACK) {
+		return false
+	}
+	if tcp.Window == uint16(65535) {
+		return false
+	}
+	tcp.Window = uint16(65535)
+	return true
+}
+
 // zeroIPID sets the IP ID field to zero for IPv4 packets
 // Returns true if the packet was modified
-func (s *Server) zeroIPID(packet *netfilter.Packet) bool {
+func (s *Server) zeroIPID(packet *base.Packet) bool {
 	if packet.IsIPv6 {
 		return false
 	}

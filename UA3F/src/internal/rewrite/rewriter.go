@@ -1,26 +1,17 @@
 package rewrite
 
 import (
-	"bufio"
 	"fmt"
-	"io"
-	"net"
+	"log/slog"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/dlclark/regexp2"
-	"github.com/hashicorp/golang-lru/v2/expirable"
-	"github.com/sirupsen/logrus"
 
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/log"
 	"github.com/sunbk201/ua3f/internal/rule"
-	"github.com/sunbk201/ua3f/internal/sniff"
 	"github.com/sunbk201/ua3f/internal/statistics"
 )
-
-var one = make([]byte, 1)
 
 // Rewriter encapsulates HTTP UA rewrite behavior and pass-through cache.
 type Rewriter struct {
@@ -32,22 +23,27 @@ type Rewriter struct {
 	uaRegex    *regexp2.Regexp
 	ruleEngine *rule.Engine
 	whitelist  []string
-	Cache      *expirable.LRU[string, struct{}]
+
+	Recorder *statistics.Recorder
 }
 
 type RewriteDecision struct {
 	Action      rule.Action
 	MatchedRule *rule.Rule
+	NeedCache   bool
 }
 
 func (d *RewriteDecision) ShouldRewrite() bool {
+	if d.NeedCache {
+		return false
+	}
 	return d.Action == rule.ActionReplace ||
 		d.Action == rule.ActionReplacePart ||
 		d.Action == rule.ActionDelete
 }
 
 // New constructs a Rewriter from config. Compiles regex and allocates cache.
-func New(cfg *config.Config) (*Rewriter, error) {
+func New(cfg *config.Config, recorder *statistics.Recorder) (*Rewriter, error) {
 	// UA pattern is compiled with case-insensitive prefix (?i)
 	pattern := "(?i)" + cfg.UARegex
 	uaRegex, err := regexp2.Compile(pattern, regexp2.None)
@@ -61,7 +57,6 @@ func New(cfg *config.Config) (*Rewriter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create rule engine: %w", err)
 		}
-		logrus.Info("Rule engine initialized")
 	}
 
 	return &Rewriter{
@@ -71,7 +66,6 @@ func New(cfg *config.Config) (*Rewriter, error) {
 		rewriteMode:    cfg.RewriteMode,
 		uaRegex:        uaRegex,
 		ruleEngine:     ruleEngine,
-		Cache:          expirable.NewLRU[string, struct{}](1024, nil, 30*time.Minute),
 		whitelist: []string{
 			"MicroMessenger Client",
 			"Bilibili Freedoooooom/MarkII",
@@ -79,6 +73,7 @@ func New(cfg *config.Config) (*Rewriter, error) {
 			"Go-http-client/1.1",
 			"ByteDancePcdn",
 		},
+		Recorder: recorder,
 	}, nil
 }
 
@@ -100,7 +95,7 @@ func (r *Rewriter) buildUserAgent(originUA string) string {
 	if r.partialReplace && r.uaRegex != nil && r.pattern != "" {
 		newUA, err := r.uaRegex.Replace(originUA, r.payloadUA, -1, -1)
 		if err != nil {
-			logrus.Errorf("r.uaRegex.Replace: %s, use full overwrite", err.Error())
+			slog.Error("r.uaRegex.Replace", slog.Any("error", err))
 			return r.payloadUA
 		}
 		return newUA
@@ -110,7 +105,7 @@ func (r *Rewriter) buildUserAgent(originUA string) string {
 
 func (r *Rewriter) EvaluateRewriteDecision(req *http.Request, srcAddr, destAddr string) *RewriteDecision {
 	originalUA := req.Header.Get("User-Agent")
-	log.LogInfoWithAddr(srcAddr, destAddr, fmt.Sprintf("original User-Agent: (%s)", originalUA))
+	log.LogInfoWithAddr(srcAddr, destAddr, fmt.Sprintf("Original User-Agent: (%s)", originalUA))
 	if originalUA == "" {
 		req.Header.Set("User-Agent", "")
 	}
@@ -118,7 +113,7 @@ func (r *Rewriter) EvaluateRewriteDecision(req *http.Request, srcAddr, destAddr 
 	// DIRECT
 	if r.rewriteMode == config.RewriteModeDirect {
 		log.LogDebugWithAddr(srcAddr, destAddr, "Direct forward mode, skip rewriting")
-		statistics.AddPassThroughRecord(&statistics.PassThroughRecord{
+		r.Recorder.AddRecord(&statistics.PassThroughRecord{
 			SrcAddr:  srcAddr,
 			DestAddr: destAddr,
 			UA:       originalUA,
@@ -135,7 +130,7 @@ func (r *Rewriter) EvaluateRewriteDecision(req *http.Request, srcAddr, destAddr 
 		// no match rule, direct forward
 		if matchedRule == nil {
 			log.LogDebugWithAddr(srcAddr, destAddr, "No rule matched, direct forward")
-			statistics.AddPassThroughRecord(&statistics.PassThroughRecord{
+			r.Recorder.AddRecord(&statistics.PassThroughRecord{
 				SrcAddr:  srcAddr,
 				DestAddr: destAddr,
 				UA:       originalUA,
@@ -157,7 +152,7 @@ func (r *Rewriter) EvaluateRewriteDecision(req *http.Request, srcAddr, destAddr 
 		// DIRECT
 		if matchedRule.Action == rule.ActionDirect {
 			log.LogDebugWithAddr(srcAddr, destAddr, "Rule matched: DIRECT action, skip rewriting")
-			statistics.AddPassThroughRecord(&statistics.PassThroughRecord{
+			r.Recorder.AddRecord(&statistics.PassThroughRecord{
 				SrcAddr:  srcAddr,
 				DestAddr: destAddr,
 				UA:       originalUA,
@@ -179,6 +174,7 @@ func (r *Rewriter) EvaluateRewriteDecision(req *http.Request, srcAddr, destAddr 
 	var err error
 	matches := false
 	isWhitelist := r.inWhitelist(originalUA)
+	decision := &RewriteDecision{}
 
 	if !isWhitelist {
 		if r.pattern == "" {
@@ -194,7 +190,7 @@ func (r *Rewriter) EvaluateRewriteDecision(req *http.Request, srcAddr, destAddr 
 
 	if isWhitelist {
 		log.LogInfoWithAddr(srcAddr, destAddr, fmt.Sprintf("Hit User-Agent whitelist: %s, add to cache", originalUA))
-		r.Cache.Add(destAddr, struct{}{})
+		decision.NeedCache = true
 	}
 	if !matches {
 		log.LogDebugWithAddr(srcAddr, destAddr, fmt.Sprintf("Not hit User-Agent regex: %s", originalUA))
@@ -202,18 +198,16 @@ func (r *Rewriter) EvaluateRewriteDecision(req *http.Request, srcAddr, destAddr 
 
 	hit := !isWhitelist && matches
 	if !hit {
-		statistics.AddPassThroughRecord(&statistics.PassThroughRecord{
+		r.Recorder.AddRecord(&statistics.PassThroughRecord{
 			SrcAddr:  srcAddr,
 			DestAddr: destAddr,
 			UA:       originalUA,
 		})
-		return &RewriteDecision{
-			Action: rule.ActionDirect,
-		}
+		decision.Action = rule.ActionDirect
+		return decision
 	}
-	return &RewriteDecision{
-		Action: rule.ActionReplace,
-	}
+	decision.Action = rule.ActionReplace
+	return decision
 }
 
 func (r *Rewriter) Rewrite(req *http.Request, srcAddr string, destAddr string, decision *RewriteDecision) *http.Request {
@@ -242,119 +236,10 @@ func (r *Rewriter) Rewrite(req *http.Request, srcAddr string, destAddr string, d
 
 	log.LogInfoWithAddr(srcAddr, destAddr, fmt.Sprintf("Rewrite %s from (%s) to (%s)", headerName, originalValue, rewritedValue))
 
-	statistics.AddRewriteRecord(&statistics.RewriteRecord{
+	r.Recorder.AddRecord(&statistics.RewriteRecord{
 		Host:       destAddr,
 		OriginalUA: originalValue,
 		MockedUA:   rewritedValue,
 	})
 	return req
-}
-
-func (r *Rewriter) Forward(dst net.Conn, req *http.Request) error {
-	if err := req.Write(dst); err != nil {
-		return fmt.Errorf("req.Write: %w", err)
-	}
-	req.Body.Close()
-	return nil
-}
-
-// Process handles the proxying with UA rewriting logic.
-func (r *Rewriter) Process(dst net.Conn, src net.Conn, destAddr string, srcAddr string) (err error) {
-	reader := bufio.NewReaderSize(src, 64*1024)
-
-	defer func() {
-		if err != nil {
-			log.LogDebugWithAddr(srcAddr, destAddr, fmt.Sprintf("Process: %s", err.Error()))
-		}
-		if _, err = io.CopyBuffer(dst, reader, one); err != nil {
-			log.LogWarnWithAddr(srcAddr, destAddr, fmt.Sprintf("Process io.CopyBuffer: %s", err.Error()))
-		}
-	}()
-
-	if strings.HasSuffix(destAddr, "443") {
-		if isTLS, _ := sniff.SniffTLS(reader); isTLS {
-			r.Cache.Add(destAddr, struct{}{})
-			log.LogInfoWithAddr(srcAddr, destAddr, "tls client hello detected, added to cache")
-			statistics.AddConnection(&statistics.ConnectionRecord{
-				Protocol: sniff.HTTPS,
-				SrcAddr:  srcAddr,
-				DestAddr: destAddr,
-			})
-			return
-		}
-	}
-
-	var isHTTP bool
-
-	if isHTTP, err = sniff.SniffHTTP(reader); err != nil {
-		err = fmt.Errorf("sniff.SniffHTTP: %w", err)
-		return
-	}
-	if !isHTTP {
-		r.Cache.Add(destAddr, struct{}{})
-		log.LogInfoWithAddr(srcAddr, destAddr, "sniff first request is not http, added to cache, switch to direct forward")
-		if isTLS, _ := sniff.SniffTLS(reader); isTLS {
-			statistics.AddConnection(&statistics.ConnectionRecord{
-				Protocol: sniff.TLS,
-				SrcAddr:  srcAddr,
-				DestAddr: destAddr,
-			})
-		}
-		return
-	}
-
-	statistics.AddConnection(&statistics.ConnectionRecord{
-		Protocol: sniff.HTTP,
-		SrcAddr:  srcAddr,
-		DestAddr: destAddr,
-	})
-
-	var req *http.Request
-
-	for {
-		if isHTTP, err = sniff.SniffHTTPFast(reader); err != nil {
-			err = fmt.Errorf("sniff.SniffHTTPFast: %w", err)
-			statistics.AddConnection(
-				&statistics.ConnectionRecord{
-					Protocol: sniff.TCP,
-					SrcAddr:  srcAddr,
-					DestAddr: destAddr,
-				},
-			)
-			return
-		}
-		if !isHTTP {
-			log.LogWarnWithAddr(srcAddr, destAddr, "sniff subsequent request is not http, switch to direct forward")
-			return
-		}
-		if req, err = http.ReadRequest(reader); err != nil {
-			err = fmt.Errorf("http.ReadRequest: %w", err)
-			return
-		}
-
-		decision := r.EvaluateRewriteDecision(req, srcAddr, destAddr)
-
-		if decision.Action == rule.ActionDrop {
-			log.LogInfoWithAddr(srcAddr, destAddr, "Request dropped by rule")
-			continue
-		}
-
-		if decision.ShouldRewrite() {
-			req = r.Rewrite(req, srcAddr, destAddr, decision)
-		}
-
-		if err = r.Forward(dst, req); err != nil {
-			err = fmt.Errorf("r.Forward: %w", err)
-			return
-		}
-		if req.Header.Get("Upgrade") == "websocket" && req.Header.Get("Connection") == "Upgrade" {
-			log.LogInfoWithAddr(srcAddr, destAddr, "websocket upgrade detected, switch to direct proxy")
-			statistics.AddConnection(&statistics.ConnectionRecord{
-				Protocol: sniff.WebSocket,
-				SrcAddr:  srcAddr,
-				DestAddr: destAddr,
-			})
-			return
-		}
-	}
 }

@@ -1,4 +1,5 @@
 module("luci.passwall2.api", package.seeall)
+appname = "passwall2"
 local com = require "luci.passwall2.com"
 bin = require "nixio".bin
 fs = require "nixio.fs"
@@ -8,8 +9,8 @@ util = require "luci.util"
 datatypes = require "luci.cbi.datatypes"
 jsonc = require "luci.jsonc"
 i18n = require "luci.i18n"
+conf = require "luci.config"
 
-appname = "passwall2"
 curl_args = { "-skfL", "--connect-timeout 3", "--retry 3" }
 command_timeout = 300
 OPENWRT_ARCH = nil
@@ -20,12 +21,39 @@ CACHE_PATH = "/tmp/etc/passwall2_tmp"
 TMP_PATH = "/tmp/etc/" .. appname
 TMP_IFACE_PATH = TMP_PATH .. "/iface"
 
-function log(...)
-	local result = os.date("%Y-%m-%d %H:%M:%S: ") .. table.concat({...}, " ")
+local lang = conf.main.lang or "auto"
+if lang == "auto" then
+	local auto_lang = uci:get(appname, "@global[0]", "auto_lang")
+	if auto_lang then lang = auto_lang end
+end
+if lang == "auto" then
+	lang = i18n.default
+end
+i18n.setlanguage(lang)
+
+function echolog(...)
+	local result = table.concat({...}, " ")
 	local f, err = io.open(LOG_FILE, "a")
 	if f and err == nil then
 		f:write(result .. "\n")
 		f:close()
+	end
+end
+
+function echolog_date(...)
+	local result = os.date("%Y-%m-%d %H:%M:%S: ") .. table.concat({...}, " ")
+	echolog(result)
+end
+
+function log(level, ...)
+	local indent = ""
+	if level >= 1 then
+		for i = 1, level, 1 do
+			indent = indent .. "  "
+		end
+		echolog_date(indent .. "- " .. table.concat({...}, " "))
+	else
+		echolog_date(table.concat({...}, " "))
 	end
 end
 
@@ -107,19 +135,15 @@ function exec_call(cmd)
 end
 
 function base64Decode(text)
-	local raw = text
 	if not text then return '' end
-	text = text:gsub("%z", "")
-	text = text:gsub("%c", "")
-	text = text:gsub("_", "/")
-	text = text:gsub("-", "+")
-	local mod4 = #text % 4
-	text = text .. string.sub('====', mod4 + 1)
-	local result = nixio.bin.b64decode(text)
+	local encoded = text:gsub("%z", ""):gsub("%c", ""):gsub("_", "/"):gsub("-", "+")
+	local mod4 = #encoded % 4
+	encoded = encoded .. string.sub('====', mod4 + 1)
+	local result = nixio.bin.b64decode(encoded)
 	if result then
 		return result:gsub("%z", "")
 	else
-		return raw
+		return text
 	end
 end
 
@@ -128,7 +152,7 @@ function base64Encode(text)
 	return result
 end
 
---提取URL中的域名和端口(no ip)
+-- Extract the domain name and port from the URL (no IP address).
 function get_domain_port_from_url(url)
 	local scheme, domain, port = string.match(url, "^(https?)://([%w%.%-]+):?(%d*)")
 	if not domain then
@@ -141,7 +165,7 @@ function get_domain_port_from_url(url)
 	return domain, port
 end
 
---解析域名
+-- Domain resolution
 function domainToIPv4(domain, dns)
 	local Dns = dns or "223.5.5.5"
 	local IPs = luci.sys.exec('nslookup %s %s | awk \'/^Name:/{getline; if ($1 == "Address:") print $2}\'' % { domain, Dns })
@@ -161,7 +185,7 @@ function curl_base(url, file, args)
 end
 
 function curl_proxy(url, file, args)
-	--使用代理
+	-- Use the proxy
 	local socks_server = get_cache_var("GLOBAL_SOCKS_server")
 	if socks_server and socks_server ~= "" then
 		if not args then args = {} end
@@ -181,7 +205,7 @@ function curl_logic(url, file, args)
 end
 
 function curl_direct(url, file, args)
-	--直连访问
+	-- Direct access
 	if not args then args = {} end
 	local tmp_args = clone(args)
 	local domain, port = get_domain_port_from_url(url)
@@ -218,21 +242,24 @@ function url(...)
 	return require "luci.dispatcher".build_url(url)
 end
 
-function trim(text)
-	if not text or text == "" then return "" end
-	return text:match("^%s*(.-)%s*$")
+function trim(s)
+	local len = #s
+	local i, j = 1, len
+	while i <= len and s:byte(i) <= 32 do i = i + 1 end
+	while j >= i and s:byte(j) <= 32 do j = j - 1 end
+	if i > j then return "" end
+	return s:sub(i, j)
 end
 
--- 分割字符串
 function split(full, sep)
 	if full then
-		full = full:gsub("%z", "") -- 这里不是很清楚 有时候结尾带个\0
+		full = full:gsub("%z", "") -- This is not very clear; sometimes it ends with a `\0`.
 		local off, result = 1, {}
 		while true do
 			local nStart, nEnd = full:find(sep, off)
 			if not nEnd then
 				local res = string.sub(full, off, string.len(full))
-				if #res > 0 then -- 过滤掉 \0
+				if #res > 0 then -- Filter out `\0`
 					table.insert(result, res)
 				end
 				break
@@ -440,6 +467,8 @@ end
 function get_valid_nodes()
 	local show_node_info = uci_get_type("global_other", "show_node_info") or "0"
 	local nodes = {}
+	local default_nodes = {}
+	local other_nodes = {}
 	uci:foreach(appname, "nodes", function(e)
 		e.id = e[".name"]
 		if e.type and e.remarks then
@@ -448,7 +477,11 @@ function get_valid_nodes()
 				if type == "sing-box" then type = "Sing-Box" end
 				e["remark"] = "%s：[%s] " % {type .. " " .. i18n.translatef(e.protocol), e.remarks}
 				e["node_type"] = "special"
-				nodes[#nodes + 1] = e
+				if not e.group or e.group == "" then
+					default_nodes[#default_nodes + 1] = e
+				else
+					other_nodes[#other_nodes + 1] = e
+				end
 			end
 			local port = e.port or e.hysteria_hop or e.hysteria2_hop
 			if port and e.address then
@@ -488,11 +521,17 @@ function get_valid_nodes()
 						e["remark"] = "%s：[%s] %s:%s" % {type, e.remarks, address, port}
 					end
 					e.node_type = "normal"
-					nodes[#nodes + 1] = e
+					if not e.group or e.group == "" then
+						default_nodes[#default_nodes + 1] = e
+					else
+						other_nodes[#other_nodes + 1] = e
+					end
 				end
 			end
 		end
 	end)
+	for i = 1, #default_nodes do nodes[#nodes + 1] = default_nodes[i] end
+	for i = 1, #other_nodes do nodes[#nodes + 1] = other_nodes[i] end
 	return nodes
 end
 
@@ -1139,13 +1178,13 @@ function get_version()
 	if not version or #version == 0 then
 		version = sys.exec("apk list luci-app-passwall2 2>/dev/null | awk '/installed/ {print $1}' | cut -d'-' -f4-")
 	end
-	return version or ""
+	return (version or ""):gsub("\n", "")
 end
 
 function to_check_self()
 	local url = "https://raw.githubusercontent.com/xiaorouji/openwrt-passwall2/main/luci-app-passwall2/Makefile"
 	local tmp_file = "/tmp/passwall2_makefile"
-	local return_code, result = curl_logic(url, tmp_file, curl_args)
+	local return_code, result = curl_auto(url, tmp_file, curl_args)
 	result = return_code == 0
 	if not result then
 		exec("/bin/rm", {"-f", tmp_file})
@@ -1155,8 +1194,8 @@ function to_check_self()
 		}
 	end
 	local local_version  = get_version()
-	local remote_version = sys.exec("echo -n $(grep 'PKG_VERSION' /tmp/passwall2_makefile|awk -F '=' '{print $2}')")
-				.. "-" ..  sys.exec("echo -n $(grep 'PKG_RELEASE' /tmp/passwall2_makefile|awk -F '=' '{print $2}')")
+	local remote_version = sys.exec("echo -n $(grep '^PKG_VERSION' /tmp/passwall2_makefile | head -n 1 | awk -F '=' '{print $2}')")
+	exec("/bin/rm", {"-f", tmp_file})
 
 	local has_update = compare_versions(local_version, "<", remote_version)
 	if not has_update then
@@ -1207,6 +1246,26 @@ function set_apply_on_parse(map)
 	if not map then
 		return
 	end
+	local lang = conf.main.lang or "auto"
+	if lang == "auto" then
+		local http = require "luci.http"
+		local aclang = http.getenv("HTTP_ACCEPT_LANGUAGE") or ""
+		for lpat in aclang:gmatch("[%w-]+") do
+			lpat = lpat and lpat:gsub("-", "_")
+			if conf.languages[lpat] then
+				lang = lpat
+				break
+			end
+			lpat = lpat and lpat:lower()
+			if conf.languages[lpat] then
+				lang = lpat
+				break
+			end
+		end
+		if lang ~= "auto" then
+			sh_uci_set(appname, "@global[0]", "auto_lang", lang, true)
+		end
+	end
 	if is_js_luci() == true then
 		local hide_popup_box = nil
 		if hide_popup_box == true then
@@ -1224,7 +1283,7 @@ function set_apply_on_parse(map)
 		end
 	end
 	map.render = function(self, ...)
-		getmetatable(self).__index.render(self, ...) -- 保持原渲染流程
+		getmetatable(self).__index.render(self, ...) -- Maintain the original rendering process
 		optimize_cbi_ui()
 	end
 end
@@ -1243,7 +1302,7 @@ function luci_types(id, m, s, type_name, option_prefix)
 				end
 
 				s.fields[key].cfgvalue = function(self, section)
-					-- 添加自定义 custom_cfgvalue 属性，如果有自定义的 custom_cfgvalue 函数，则使用自定义的 cfgvalue 逻辑
+					-- Add a custom `custom_cfgvalue` attribute. If a custom `custom_cfgvalue` function exists, the custom `cfgvalue` logic will be used.
 					if self.custom_cfgvalue then
 						return self:custom_cfgvalue(section)
 					else
@@ -1258,7 +1317,7 @@ function luci_types(id, m, s, type_name, option_prefix)
 				end
 				s.fields[key].write = function(self, section, value)
 					if s.fields["type"]:formvalue(id) == type_name then
-						-- 添加自定义 custom_write 属性，如果有自定义的 custom_write 函数，则使用自定义的 write 逻辑
+						-- Add a custom `custom_write` attribute; if a custom `custom_write` function exists, then use the custom write logic.
 						if self.custom_write then
 							self:custom_write(section, value)
 						else
@@ -1274,7 +1333,7 @@ function luci_types(id, m, s, type_name, option_prefix)
 				end
 				s.fields[key].remove = function(self, section)
 					if s.fields["type"]:formvalue(id) == type_name then
-						-- 添加自定义 custom_remove 属性，如果有自定义的 custom_remove 函数，则使用自定义的 remove 逻辑
+						-- Add a custom `custom_remove` attribute; if a custom `custom_remove` function exists, use the custom remove logic.
 						if self.custom_remove then
 							self:custom_remove(section)
 						else
@@ -1334,14 +1393,14 @@ end
 function optimize_cbi_ui()
 	luci.http.write([[
 		<script type="text/javascript">
-			//修正上移、下移按钮名称
+			//Correct the names of the move up and move down buttons.
 			document.querySelectorAll("input.btn.cbi-button.cbi-button-up").forEach(function(btn) {
 				btn.value = "]] .. i18n.translate("Move up") .. [[";
 			});
 			document.querySelectorAll("input.btn.cbi-button.cbi-button-down").forEach(function(btn) {
 				btn.value = "]] .. i18n.translate("Move down") .. [[";
 			});
-			//删除控件和说明之间的多余换行
+			//Remove extra line breaks between controls and descriptions.
 			document.querySelectorAll("div.cbi-value-description").forEach(function(descDiv) {
 				var prev = descDiv.previousSibling;
 				while (prev && prev.nodeType === Node.TEXT_NODE && prev.textContent.trim() === "") {

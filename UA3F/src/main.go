@@ -1,21 +1,24 @@
 package main
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/log"
-	"github.com/sunbk201/ua3f/internal/rewrite"
 	"github.com/sunbk201/ua3f/internal/server"
+	"github.com/sunbk201/ua3f/internal/server/desync"
 	"github.com/sunbk201/ua3f/internal/server/netlink"
-	"github.com/sunbk201/ua3f/internal/statistics"
+	"github.com/sunbk201/ua3f/internal/usergroup"
 )
 
-const version = "1.8.0"
+var (
+	appVersion    = "Development"
+	shutdownChain []func() error
+)
 
 func main() {
 	cfg, showVer := config.Parse()
@@ -23,51 +26,77 @@ func main() {
 	log.SetLogConf(cfg.LogLevel)
 
 	if showVer {
-		logrus.Infof("UA3F version: %s", version)
+		fmt.Printf("UA3F version %s\n", appVersion)
 		return
 	}
 
-	rw, err := rewrite.New(cfg)
-	if err != nil {
-		logrus.Fatal(err)
-	}
+	log.LogHeader(appVersion, cfg)
 
-	srv, err := server.NewServer(cfg, rw)
-	if err != nil {
-		logrus.Fatal(err)
+	if err := usergroup.SetUserGroup(cfg); err != nil {
+		slog.Error("usergroup.SetUserGroup", slog.Any("error", err))
+		return
 	}
-	defer srv.Close()
-
-	log.LogHeader(version, cfg)
 
 	helper := netlink.New(cfg)
-	defer helper.Close()
-	err = helper.Setup()
+	addShutdown("helper.Close", helper.Close)
+	if err := helper.Start(); err != nil {
+		slog.Error("helper.Start", slog.Any("error", err))
+		shutdown()
+		return
+	}
+
+	if cfg.TCPDesync.Enabled {
+		desync := desync.New(cfg)
+		addShutdown("desync.Close", desync.Close)
+		if err := desync.Start(); err != nil {
+			slog.Error("desync.Start", slog.Any("error", err))
+			shutdown()
+			return
+		}
+	}
+
+	srv, err := server.NewServer(cfg)
 	if err != nil {
-		logrus.Fatal(err)
+		slog.Error("server.NewServer", slog.Any("error", err))
+		shutdown()
+		return
+	}
+	addShutdown("srv.Close", srv.Close)
+	if err := srv.Start(); err != nil {
+		slog.Error("srv.Start", slog.Any("error", err))
+		shutdown()
+		return
 	}
 
 	cleanup := make(chan os.Signal, 1)
-	signal.Notify(cleanup, syscall.SIGINT, syscall.SIGTERM)
-
-	go helper.Start()
-	go statistics.StartRecorder()
-
-	go func() {
-		<-cleanup
-		logrus.Info("Shutting down UA3F...")
-		if err := helper.Close(); err != nil {
-			logrus.Errorf("Error during helper close: %v", err)
+	signal.Notify(cleanup, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGINT, syscall.SIGTERM)
+	for {
+		s := <-cleanup
+		slog.Info("Received signal", slog.String("signal", s.String()))
+		switch s {
+		case syscall.SIGQUIT, syscall.SIGINT, syscall.SIGTERM:
+			shutdown()
+			return
+		case syscall.SIGHUP:
+		default:
+			return
 		}
-		if err := srv.Close(); err != nil {
-			logrus.Errorf("Error during UA3F close: %v", err)
-		}
-		logrus.Info("UA3F exited gracefully")
-		os.Exit(0)
-
-	}()
-
-	if err := srv.Start(); err != nil {
-		logrus.Fatal(err)
 	}
+}
+
+func addShutdown(name string, fn func() error) {
+	shutdownChain = append(shutdownChain, func() error {
+		if err := fn(); err != nil {
+			slog.Error(name, slog.Any("error", err))
+			return err
+		}
+		return nil
+	})
+}
+
+func shutdown() {
+	for i := len(shutdownChain) - 1; i >= 0; i-- {
+		_ = shutdownChain[i]()
+	}
+	slog.Info("UA3F exit")
 }

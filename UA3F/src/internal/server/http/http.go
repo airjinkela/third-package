@@ -1,38 +1,41 @@
 package http
 
 import (
-	"bufio"
 	"fmt"
 	"io"
-	"net"
+	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/log"
 	"github.com/sunbk201/ua3f/internal/rewrite"
 	"github.com/sunbk201/ua3f/internal/rule"
-	"github.com/sunbk201/ua3f/internal/server/utils"
+	"github.com/sunbk201/ua3f/internal/server/base"
 	"github.com/sunbk201/ua3f/internal/sniff"
 	"github.com/sunbk201/ua3f/internal/statistics"
 )
 
 type Server struct {
-	cfg *config.Config
-	rw  *rewrite.Rewriter
+	base.Server
 }
 
-func New(cfg *config.Config, rw *rewrite.Rewriter) *Server {
+func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
 	return &Server{
-		cfg: cfg,
-		rw:  rw,
+		Server: base.Server{
+			Cfg:      cfg,
+			Rewriter: rw,
+			Recorder: rc,
+			Cache:    expirable.NewLRU[string, struct{}](1024, nil, 30*time.Minute),
+		},
 	}
 }
 
 func (s *Server) Start() (err error) {
+	s.Recorder.Start()
 	server := &http.Server{
-		Addr: s.cfg.ListenAddr,
+		Addr: s.Cfg.ListenAddr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.Method == http.MethodConnect {
 				s.handleTunneling(w, req)
@@ -41,7 +44,12 @@ func (s *Server) Start() (err error) {
 			}
 		}),
 	}
-	return server.ListenAndServe()
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server.ListenAndServe", slog.Any("error", err))
+		}
+	}()
+	return nil
 }
 
 func (s *Server) Close() (err error) {
@@ -49,41 +57,37 @@ func (s *Server) Close() (err error) {
 }
 
 func (s *Server) handleHTTP(w http.ResponseWriter, req *http.Request) {
-	req.RequestURI = ""
-	req.URL.Scheme = "http"
-	req.URL.Host = req.Host
 	destPort := req.URL.Port()
 	if destPort == "" {
 		destPort = "80"
 	}
 	destAddr := fmt.Sprintf("%s:%s", req.URL.Hostname(), destPort)
-	statistics.AddConnection(&statistics.ConnectionRecord{
+
+	record := &statistics.ConnectionRecord{
 		Protocol:  sniff.HTTP,
 		SrcAddr:   req.RemoteAddr,
 		DestAddr:  destAddr,
 		StartTime: time.Now(),
-	})
+	}
+	s.Recorder.AddRecord(record)
+	defer s.Recorder.RemoveRecord(record)
 
-	logrus.Infof("HTTP request for %s", destAddr)
+	slog.Info("HTTP proxy request", slog.String("srcAddr", req.RemoteAddr), slog.String("destAddr", destAddr))
 
-	target, err := utils.Connect(destAddr)
+	req, err := s.rewrite(req, req.RemoteAddr, destAddr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	defer target.Close()
 
-	err = s.rewriteAndForward(target, req, req.Host, req.RemoteAddr)
+	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(target), req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	for k, v := range resp.Header {
 		for _, vv := range v {
@@ -91,14 +95,28 @@ func (s *Server) handleHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
-	statistics.RemoveConnection(req.RemoteAddr, destAddr)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (s *Server) rewrite(req *http.Request, srcAddr, dstAddr string) (*http.Request, error) {
+	decision := s.Rewriter.EvaluateRewriteDecision(req, srcAddr, dstAddr)
+	if decision.Action == rule.ActionDrop {
+		log.LogInfoWithAddr(srcAddr, dstAddr, "Request dropped by rule")
+		return nil, fmt.Errorf("request dropped by rule")
+	}
+	if decision.NeedCache {
+		s.Cache.Add(dstAddr, struct{}{})
+	}
+	if decision.ShouldRewrite() {
+		req = s.Rewriter.Rewrite(req, srcAddr, dstAddr, decision)
+	}
+	return req, nil
 }
 
 func (s *Server) handleTunneling(w http.ResponseWriter, req *http.Request) {
-	logrus.Infof("HTTP CONNECT request for %s", req.Host)
+	slog.Info("HTTP CONNECT request", slog.String("host", req.Host))
 	destAddr := req.Host
-	dest, err := utils.Connect(destAddr)
+	dest, err := base.Connect(destAddr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -108,46 +126,21 @@ func (s *Server) handleTunneling(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
 		return
 	}
-	client, _, err := hijacker.Hijack()
+	src, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-	s.ForwardTCP(client, dest, destAddr)
-}
-
-func (s *Server) rewriteAndForward(target net.Conn, req *http.Request, dstAddr, srcAddr string) (err error) {
-	decision := s.rw.EvaluateRewriteDecision(req, srcAddr, dstAddr)
-	if decision.Action == rule.ActionDrop {
-		log.LogInfoWithAddr(srcAddr, dstAddr, "Request dropped by rule")
-		return fmt.Errorf("request dropped by rule")
-	}
-	if decision.ShouldRewrite() {
-		req = s.rw.Rewrite(req, srcAddr, dstAddr, decision)
-	}
-	if err = s.rw.Forward(target, req); err != nil {
-		err = fmt.Errorf("s.rw.Forward: %w", err)
+	if _, err := src.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
+		slog.Warn("failed to write CONNECT response to client", slog.String("client", req.RemoteAddr), slog.Any("error", err))
+		_ = src.Close()
+		_ = dest.Close()
 		return
 	}
-	return nil
-}
-
-func (s *Server) HandleClient(client net.Conn) {
-}
-
-// ForwardTCP proxies traffic in both directions.
-// target->client uses raw copy.
-// client->target is processed by the rewriter (or raw if cached).
-func (s *Server) ForwardTCP(client, target net.Conn, destAddr string) {
-	// Server -> Client (raw)
-	go utils.CopyHalf(client, target)
-
-	if s.cfg.RewriteMode == config.RewriteModeDirect {
-		// Client -> Server (raw)
-		go utils.CopyHalf(target, client)
-		return
-	}
-	// Client -> Server (rewriter)
-	go utils.ProxyHalf(target, client, s.rw, destAddr)
+	s.ServeConnLink(&base.ConnLink{
+		LConn: src,
+		RConn: dest,
+		LAddr: req.RemoteAddr,
+		RAddr: destAddr,
+	})
 }

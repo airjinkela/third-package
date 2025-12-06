@@ -10,7 +10,7 @@
 ### 1. 添加 rpcd 权限配置
 为 at-daemon 添加 rpcd 权限（为了方便演示，下面添加的是免认证服务，生产环境请根据安全需求配置适当的认证）
 ```bash
-echo << EOF > /usr/share/rpcd/acl.d/unauthenticated.json
+cat << EOF > /usr/share/rpcd/acl.d/unauthenticated.json
 {
         "unauthenticated": {
                 "description": "Access controls for unauthenticated requests",

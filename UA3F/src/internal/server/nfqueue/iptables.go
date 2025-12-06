@@ -4,14 +4,16 @@ package nfqueue
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/sunbk201/ua3f/internal/netfilter"
 )
 
 const (
-	table = "mangle"
-	chain = "UA3F"
+	table     = "mangle"
+	chain     = "UA3F"
+	jumpPoint = "POSTROUTING"
 )
 
 var JumpChain = []string{
@@ -35,7 +37,13 @@ func (s *Server) iptSetup() error {
 		return err
 	}
 
-	err = ipt.Append(table, "POSTROUTING", JumpChain...)
+	// ensure netlink helper behind nfqueue server
+	pos, exists := s.detectNfqueue(ipt)
+	if !exists {
+		err = ipt.Append(table, jumpPoint, JumpChain...)
+	} else {
+		err = ipt.Insert(table, jumpPoint, pos-1, JumpChain...)
+	}
 	if err != nil {
 		return err
 	}
@@ -52,28 +60,28 @@ func (s *Server) iptCleanup() error {
 	if err != nil {
 		return err
 	}
-	ipt.Delete(table, "POSTROUTING", JumpChain...)
+	ipt.Delete(table, jumpPoint, JumpChain...)
 	ipt.ClearAndDeleteChain(table, chain)
 	s.IptDeleteLanIP()
 	return nil
 }
 
 func (s *Server) IptSetNfqueue(ipt *iptables.IPTables) error {
-	err := ipt.Append(table, chain, netfilter.RuleIgnoreReply...)
+	err := ipt.Append(table, chain, netfilter.IptRuleIgnoreReply...)
 	if err != nil {
 		return err
 	}
-	err = ipt.Append(table, chain, netfilter.RuleIgnoreLAN...)
+	err = ipt.Append(table, chain, netfilter.IptRuleIgnoreLAN...)
 	if err != nil {
 		return err
 	}
-	err = ipt.Append(table, chain, netfilter.RuleIgnorePorts...)
+	err = ipt.Append(table, chain, netfilter.IptRuleIgnorePorts...)
 	if err != nil {
 		return err
 	}
 	var RuleIgnoreMark = []string{
 		"-m", "connmark",
-		"--mark", strconv.Itoa(int(s.NotHTTPMark)),
+		"--mark", strconv.Itoa(int(s.NotHTTPCtMark)),
 		"-j", "RETURN",
 	}
 	err = ipt.Append(table, chain, RuleIgnoreMark...)
@@ -95,4 +103,22 @@ func (s *Server) IptSetNfqueue(ipt *iptables.IPTables) error {
 		return err
 	}
 	return nil
+}
+
+// detect if iptables nfqueue rule exists and return nfqueue rule position
+func (s *Server) detectNfqueue(ipt *iptables.IPTables) (pos int, exists bool) {
+	rules, err := ipt.List(table, jumpPoint)
+	if err != nil {
+		return 0, false
+	}
+	lastIndex := -1
+	for i, rule := range rules {
+		if strings.Contains(rule, "NFQUEUE") {
+			lastIndex = max(lastIndex, i)
+		}
+		if strings.Contains(rule, "DESYNC") {
+			lastIndex = max(lastIndex, i)
+		}
+	}
+	return lastIndex + 1, lastIndex != -1
 }

@@ -56,7 +56,7 @@ msgstr "全局重写"
 msgid "Rule Based"
 msgstr "规则判定"
 
-msgid "Direct Forward: No rewriting. Global Rewrite: Rewrite all User-Agents to the specified value. Rule Based: Use rewrite rules to determine behavior."
+msgid "Direct Forward: No rewriting. Global Rewrite: Rewrite all User-Agents. Rule Based: Use rewrite rules to determine behavior."
 msgstr "直接转发：不进行任何重写。全局重写：将所有 User-Agent 重写为指定值。规则判定：根据重写规则判定行为。"
 
 msgid "User-Agent"
@@ -89,8 +89,8 @@ msgstr "重写次数实时统计"
 msgid "Host"
 msgstr "地址"
 
-msgid "Rewrite Count"
-msgstr "重写次数"
+msgid "Count"
+msgstr "次数"
 
 msgid "Original Header"
 msgstr "原始 Header"
@@ -101,9 +101,6 @@ msgstr "重写后 Header"
 msgid "Pass-Through Statistics"
 msgstr "放行次数实时统计"
 
-msgid "Pass-Through Count"
-msgstr "放行次数"
-
 msgid "Last Source Address"
 msgstr "最近访问源地址"
 
@@ -113,8 +110,8 @@ msgstr "最近访问目标地址"
 msgid "Display Lines"
 msgstr "显示行数"
 
-msgid "Sets the logging level. Do not keep the log level set to debug/info/warn for an extended period of time."
-msgstr "设置日志级别，请勿长时间将日志级别设置为 debug / info / warn"
+msgid "Sets the logging level. Do not keep the log level set to DEBUG for an extended period of time."
+msgstr "DEBUG 仅用于问题反馈与调试，请勿长时间保持该级别。"
 
 msgid "Download Logs"
 msgstr "下载日志"
@@ -129,7 +126,7 @@ msgid "Set TTL"
 msgstr "固定 TTL"
 
 msgid "Set the TTL 64 for packets"
-msgstr "固定数据包的 TTL"
+msgstr "固定数据包的 TTL 为 64"
 
 msgid "Connection Statistics"
 msgstr "连接实时统计"
@@ -155,13 +152,13 @@ msgstr "添加规则"
 msgid "Index"
 msgstr "序号"
 
-msgid "Rule Type"
-msgstr "规则类型"
+msgid "Type"
+msgstr "类型"
 
 msgid "Match Value"
 msgstr "匹配值"
 
-msgid "Rewrite Action"
+msgid "Action"
 msgstr "重写策略"
 
 msgid "Rewrite Value"
@@ -209,10 +206,10 @@ msgstr "保存"
 msgid "Edit"
 msgstr "编辑"
 
-msgid "Move Up"
+msgid "Up"
 msgstr "上移"
 
-msgid "Move Down"
+msgid "Down"
 msgstr "下移"
 
 msgid "Delete"
@@ -260,8 +257,53 @@ msgstr "删除 TCP 时间戳"
 msgid "Remove TCP Timestamp option"
 msgstr "移除 TCP 时间戳选项"
 
+msgid "Set TCP Initial Window"
+msgstr "固定 TCP 初始接收窗口"
+
+msgid "Set the TCP Initial Window to 65535 for SYN packets"
+msgstr "固定 TCP SYN 的 TCP 初始接收窗口设置为 65535"
+
 msgid "Set IP ID"
 msgstr "固定 IP ID"
 
 msgid "Set the IP ID to 0 for packets"
-msgstr "将数据包的 IP ID 设置为 0，不推荐开启，除非你知道这是什么"
+msgstr "将数据包的 IP ID 设置为 0，不推荐开启"
+
+msgid "Issue Report"
+msgstr "问题反馈"
+
+msgid "Log Management"
+msgstr "日志管理"
+
+msgid "Desync Settings"
+msgstr "Desync 设置"
+
+msgid "Enable TCP Desync"
+msgstr "启用 TCP 分片乱序发射"
+
+msgid "Desync Bytes"
+msgstr "Desync 字节"
+
+msgid "Desync Packets"
+msgstr "Desync 数据包"
+
+msgid "Number of bytes for fragmented random emission"
+msgstr "乱序发射的字节数，谨慎设置过大"
+
+msgid "Number of packets for fragmented random emission"
+msgstr "乱序发射的数据包数，谨慎设置过大"
+
+msgid "Enable TCP Desynchronization to evade DPI"
+msgstr "启用 TCP 分片乱序发射，用于对抗 DPI 检测"
+
+msgid "Recommend install kmod-nft-tproxy package for TPROXY mode"
+msgstr "建议安装 kmod-nft-tproxy 软件包以增强兼容性"
+
+msgid "Recommend install kmod-nft-queue package for NFQUEUE mode"
+msgstr "建议安装 kmod-nft-queue 软件包以增强兼容性"
+
+msgid "Flow Offloading is enabled in firewall settings, it may cause NFQUEUE mode to not work properly"
+msgstr "防火墙设置中启用了流量卸载，可能导致 NFQUEUE 模式无法正常工作"
+
+msgid "Flow Offloading is enabled in firewall settings, it may cause TCP Desync to not work properly"
+msgstr "防火墙设置中启用了流量卸载，可能导致 TCP Desync 无法正常工作"

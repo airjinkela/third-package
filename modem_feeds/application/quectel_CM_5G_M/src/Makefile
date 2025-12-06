@@ -22,7 +22,9 @@ QL_CM_DHCP+=${LIBMNL}
 endif
 
 CFLAGS += -Wall -Wextra -Werror -O1 #-s
-LDFLAGS += -lpthread -ldl -lrt
+# Allow incompatible-pointer-types, unused-result, and stringop-overflow warnings for vendor code compatibility
+CFLAGS += -Wno-error=incompatible-pointer-types -Wno-error=unused-result -Wno-error=stringop-overflow
+LDFLAGS += -lpthread -ldl -lrt -ljson-c
 
 release: clean qmi-proxy mbim-proxy atc-proxy #qrtr-proxy
 	$(CC) ${CFLAGS} ${QL_CM_SRC} ${QL_CM_DHCP} -o quectel-CM ${LDFLAGS}

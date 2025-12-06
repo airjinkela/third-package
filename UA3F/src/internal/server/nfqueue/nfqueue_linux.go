@@ -4,47 +4,53 @@ package nfqueue
 
 import (
 	"fmt"
+	"log/slog"
+	"time"
 
 	nfq "github.com/florianl/go-nfqueue/v2"
-	"github.com/sirupsen/logrus"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"sigs.k8s.io/knftables"
 
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/log"
 	"github.com/sunbk201/ua3f/internal/netfilter"
 	"github.com/sunbk201/ua3f/internal/rewrite"
+	"github.com/sunbk201/ua3f/internal/server/base"
+	"github.com/sunbk201/ua3f/internal/statistics"
 )
 
 type Server struct {
+	base.Server
 	netfilter.Firewall
-	cfg                 *config.Config
-	rw                  *rewrite.Rewriter
-	nfqServer           *netfilter.NfqueueServer
-	nftable             *knftables.Table
-	SniffMarkRangeLower uint32
-	SniffMarkRangeUpper uint32
-	HTTPMark            uint32
-	NotHTTPMark         uint32
+	nfqServer        *base.NfqueueServer
+	SniffCtMarkLower uint32
+	SniffCtMarkUpper uint32
+	HTTPCtMark       uint32
+	NotHTTPCtMark    uint32
 }
 
-func New(cfg *config.Config, rw *rewrite.Rewriter) *Server {
+func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
 	s := &Server{
-		cfg:                 cfg,
-		rw:                  rw,
-		SniffMarkRangeLower: 10201,
-		SniffMarkRangeUpper: 10216,
-		NotHTTPMark:         201,
-		HTTPMark:            202,
-		nfqServer: &netfilter.NfqueueServer{
-			QueueNum: 10201,
+		Server: base.Server{
+			Cfg:      cfg,
+			Rewriter: rw,
+			Recorder: rc,
+			Cache:    expirable.NewLRU[string, struct{}](1024, nil, 30*time.Minute),
 		},
-		nftable: &knftables.Table{
-			Name:   "UA3F",
-			Family: knftables.IPv4Family,
+		SniffCtMarkLower: 10201,
+		SniffCtMarkUpper: 10216,
+		NotHTTPCtMark:    201,
+		HTTPCtMark:       202,
+		nfqServer: &base.NfqueueServer{
+			QueueNum: 10201,
 		},
 	}
 	s.nfqServer.HandlePacket = s.handlePacket
 	s.Firewall = netfilter.Firewall{
+		Nftable: &knftables.Table{
+			Name:   "UA3F",
+			Family: knftables.InetFamily,
+		},
 		NftSetup:   s.nftSetup,
 		NftCleanup: s.nftCleanup,
 		IptSetup:   s.iptSetup,
@@ -54,35 +60,37 @@ func New(cfg *config.Config, rw *rewrite.Rewriter) *Server {
 }
 
 func (s *Server) Start() (err error) {
-	err = s.Firewall.Setup(s.cfg)
+	err = s.Firewall.Setup(s.Cfg)
 	if err != nil {
-		logrus.Errorf("s.Firewall.Setup: %v", err)
+		slog.Error("s.Firewall.Setup", slog.Any("error", err))
 		return err
 	}
+	s.Recorder.Start()
 	return s.nfqServer.Start()
 }
 
-func (s *Server) Close() (err error) {
-	err = s.Firewall.Cleanup()
+func (s *Server) Close() error {
+	err := s.Firewall.Cleanup()
+	s.nfqServer.Close()
 	return err
 }
 
 // handlePacket processes a single NFQUEUE packet
-func (s *Server) handlePacket(packet *netfilter.Packet) {
-	if s.cfg.RewriteMode == config.RewriteModeDirect || packet.TCP == nil {
+func (s *Server) handlePacket(packet *base.Packet) {
+	if s.Cfg.RewriteMode == config.RewriteModeDirect || packet.TCP == nil || len(packet.TCP.Payload) == 0 {
 		_ = s.nfqServer.Nf.SetVerdict(*packet.A.PacketID, nfq.NfAccept)
 		return
 	}
-	if s.rw.Cache.Contains(packet.DstAddr) {
+	if s.Cache.Contains(packet.DstAddr) {
 		s.sendVerdict(packet, &rewrite.RewriteResult{Modified: false, InCache: true})
-		log.LogDebugWithAddr(packet.SrcAddr, packet.DstAddr, "Destination in cache, skipping User-Agent rewrite")
+		log.LogDebugWithAddr(packet.SrcAddr, packet.DstAddr, "Destination in cache, direct forwrard")
 		return
 	}
-	result := s.rw.RewriteTCP(packet.TCP, packet.SrcAddr, packet.DstAddr)
+	result := s.Rewriter.RewriteTCP(packet.TCP, packet.SrcAddr, packet.DstAddr)
 	s.sendVerdict(packet, result)
 }
 
-func (s *Server) sendVerdict(packet *netfilter.Packet, result *rewrite.RewriteResult) {
+func (s *Server) sendVerdict(packet *base.Packet, result *rewrite.RewriteResult) {
 	nf := s.nfqServer.Nf
 	id := *packet.A.PacketID
 	setMark, nextMark := s.getNextMark(packet, result)
@@ -99,7 +107,7 @@ func (s *Server) sendVerdict(packet *netfilter.Packet, result *rewrite.RewriteRe
 		}
 	}
 
-	log.LogDebugWithAddr(packet.SrcAddr, packet.DstAddr, fmt.Sprintf("Sending verdict: Modified=%v, SetMark=%v, NextMark=%d", result.Modified, setMark, nextMark))
+	log.LogDebugWithAddr(packet.SrcAddr, packet.DstAddr, fmt.Sprintf("Sending verdict: modified=%v, setMark=%v, nextmark=%d", result.Modified, setMark, nextMark))
 	if !result.Modified {
 		if setMark {
 			nf.SetVerdictWithOption(id, nfq.NfAccept, nfq.WithConnMark(nextMark))
@@ -121,44 +129,41 @@ func (s *Server) sendVerdict(packet *netfilter.Packet, result *rewrite.RewriteRe
 	}
 }
 
-func (s *Server) getNextMark(packet *netfilter.Packet, result *rewrite.RewriteResult) (setMark bool, mark uint32) {
-	mark, found := packet.GetConnMark()
+func (s *Server) getNextMark(packet *base.Packet, result *rewrite.RewriteResult) (setMark bool, mark uint32) {
+	mark, found := packet.GetCtMark()
 	if !found {
-		return true, s.SniffMarkRangeLower
+		return true, s.SniffCtMarkLower
 	}
 	log.LogDebugWithAddr(packet.SrcAddr, packet.DstAddr, fmt.Sprintf("Current connmark: %d", mark))
 
 	// should not happen
-	if mark == s.NotHTTPMark {
+	if mark == s.NotHTTPCtMark {
 		return false, 0
 	}
 
-	if mark == s.HTTPMark {
+	if mark == s.HTTPCtMark {
 		return false, 0
 	}
 
 	if result.InCache {
-		return true, s.NotHTTPMark
-	}
-
-	if result.InWhitelist {
-		return true, s.NotHTTPMark
+		return true, s.NotHTTPCtMark
 	}
 
 	if result.Modified {
-		return true, s.HTTPMark
+		return true, s.HTTPCtMark
 	}
 
 	if mark == 0 {
-		return true, s.SniffMarkRangeLower
+		return true, s.SniffCtMarkLower
 	}
 
-	if mark == s.SniffMarkRangeUpper {
-		s.rw.Cache.Add(packet.DstAddr, struct{}{})
-		return true, s.NotHTTPMark
+	if mark == s.SniffCtMarkUpper {
+		slog.Debug("Connmark reached upper limit, marking as NotHTTP", slog.String("SrcAddr", packet.SrcAddr), slog.String("DstAddr", packet.DstAddr))
+		s.Cache.Add(packet.DstAddr, struct{}{})
+		return true, s.NotHTTPCtMark
 	}
 
-	if mark >= s.SniffMarkRangeLower && mark < s.SniffMarkRangeUpper {
+	if mark >= s.SniffCtMarkLower && mark < s.SniffCtMarkUpper {
 		return true, mark + 1
 	}
 

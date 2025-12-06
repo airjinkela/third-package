@@ -3,6 +3,8 @@ package config
 import (
 	"flag"
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
 )
 
@@ -25,19 +27,27 @@ const (
 )
 
 type Config struct {
-	ServerMode      ServerMode
-	BindAddr        string
-	Port            int
-	ListenAddr      string
-	LogLevel        string
-	RewriteMode     RewriteMode
-	Rules           string
-	PayloadUA       string
-	UARegex         string
-	PartialReplace  bool
-	SetTTL          bool
-	SetIPID         bool
-	DelTCPTimestamp bool
+	ServerMode          ServerMode
+	BindAddr            string
+	Port                int
+	ListenAddr          string
+	LogLevel            string
+	RewriteMode         RewriteMode
+	Rules               string
+	PayloadUA           string
+	UARegex             string
+	PartialReplace      bool
+	SetTTL              bool
+	SetIPID             bool
+	DelTCPTimestamp     bool
+	SetTCPInitialWindow bool
+	TCPDesync           TCPDesyncConfig
+}
+
+type TCPDesyncConfig struct {
+	Enabled bool
+	Bytes   uint32
+	Packets uint32
 }
 
 func Parse() (*Config, bool) {
@@ -85,7 +95,39 @@ func Parse() (*Config, bool) {
 		cfg.ListenAddr = fmt.Sprintf("0.0.0.0:%d", port)
 	}
 
-	// Parse other options
+	// Parse other options from environment variables
+	if os.Getenv("UA3F_TCPTS") == "1" {
+		cfg.DelTCPTimestamp = true
+	}
+	if os.Getenv("UA3F_TTL") == "1" {
+		cfg.SetTTL = true
+	}
+	if os.Getenv("UA3F_IPID") == "1" {
+		cfg.SetIPID = true
+	}
+	if os.Getenv("UA3F_TCP_INIT_WINDOW") == "1" {
+		cfg.SetTCPInitialWindow = true
+	}
+
+	if os.Getenv("UA3F_DESYNC") == "1" {
+		cfg.TCPDesync.Enabled = true
+		if val := os.Getenv("UA3F_DESYNC_BYTES"); val != "" {
+			var bytes uint32
+			_, err := fmt.Sscanf(val, "%d", &bytes)
+			if err == nil {
+				cfg.TCPDesync.Bytes = bytes
+			}
+		}
+		if val := os.Getenv("UA3F_DESYNC_PACKETS"); val != "" {
+			var packets uint32
+			_, err := fmt.Sscanf(val, "%d", &packets)
+			if err == nil {
+				cfg.TCPDesync.Packets = packets
+			}
+		}
+	}
+
+	// Parse other options from -o flag
 	opts := strings.Split(others, ",")
 	for _, opt := range opts {
 		switch strings.ToLower(strings.TrimSpace(opt)) {
@@ -99,4 +141,19 @@ func Parse() (*Config, bool) {
 	}
 
 	return cfg, showVer
+}
+
+func (c *Config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("Log Level", c.LogLevel),
+		slog.String("Server Mode", string(c.ServerMode)),
+		slog.String("Listen Address", c.ListenAddr),
+		slog.String("Rewrite Mode", string(c.RewriteMode)),
+		slog.String("User-Agent", c.PayloadUA),
+		slog.String("User-Agent Regex", c.UARegex),
+		slog.Bool("Partial Replace", c.PartialReplace),
+		slog.Bool("Set TTL", c.SetTTL),
+		slog.Bool("Set IP ID", c.SetIPID),
+		slog.Bool("Delete TCP Timestamp", c.DelTCPTimestamp),
+	)
 }

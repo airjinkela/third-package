@@ -11,16 +11,17 @@ import (
 )
 
 func (s *Server) nftSetup() error {
-	nft, err := knftables.New(s.nftable.Family, s.nftable.Name)
+	nft, err := knftables.New(s.Nftable.Family, s.Nftable.Name)
 	if err != nil {
 		return err
 	}
 
 	tx := nft.NewTransaction()
-	tx.Add(s.nftable)
+	tx.Add(s.Nftable)
 
-	s.NftSetLanIP(tx, s.nftable)
-	s.NftSetNfqueue(tx, s.nftable)
+	s.NftSetLanIP(tx, s.Nftable)
+	s.NftSetLanIP6(tx, s.Nftable)
+	s.NftSetNfqueue(tx, s.Nftable)
 
 	if err := nft.Run(context.TODO(), tx); err != nil {
 		return err
@@ -29,13 +30,13 @@ func (s *Server) nftSetup() error {
 }
 
 func (s *Server) nftCleanup() error {
-	nft, err := knftables.New(s.nftable.Family, s.nftable.Name)
+	nft, err := knftables.New(s.Nftable.Family, s.Nftable.Name)
 	if err != nil {
 		return err
 	}
 
 	tx := nft.NewTransaction()
-	tx.Delete(s.nftable)
+	tx.Delete(s.Nftable)
 
 	if err := nft.Run(context.TODO(), tx); err != nil {
 		return err
@@ -53,47 +54,35 @@ func (s *Server) NftSetNfqueue(tx *knftables.Transaction, table *knftables.Table
 	}
 	tx.Add(chain)
 
-	// nft add rule ip $NFT_TABLE postrouting meta l4proto != tcp counter return
 	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
-		Rule: knftables.Concat(
-			"meta l4proto != tcp",
-			"return",
-		),
+		Rule:  netfilter.NftRuleIgnoreNotTCP,
 	})
 
-	// nft add rule ip $NFT_TABLE postrouting ct direction reply counter return
 	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
-		Rule: knftables.Concat(
-			"ct direction reply",
-			"return",
-		),
+		Rule:  netfilter.NftRuleIgnoreReply,
 	})
 
-	// nft add rule ip $NFT_TABLE postrouting ip daddr @$UA3F_LANSET counter return
 	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
-		Rule: knftables.Concat(
-			fmt.Sprintf("ip daddr @%s", netfilter.LANSET),
-			"return",
-		),
+		Rule:  netfilter.NftRuleIgnoreLAN,
 	})
 
-	// nft add rule ip $NFT_TABLE postrouting tcp dport {$SKIP_PORTS} return
 	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
-		Rule: knftables.Concat(
-			fmt.Sprintf("tcp dport {%s}", netfilter.SKIP_PORTS),
-			"return",
-		),
+		Rule:  netfilter.NftRuleIgnoreLAN6,
 	})
 
-	// nft add rule ip $NFT_TABLE postrouting ct mark 201 counter return
+	tx.Add(&knftables.Rule{
+		Chain: chain.Name,
+		Rule:  netfilter.NftRuleIgnorePorts,
+	})
+
 	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
 		Rule: knftables.Concat(
-			fmt.Sprintf("ct mark %d", s.NotHTTPMark),
+			fmt.Sprintf("ct mark %d", s.NotHTTPCtMark),
 			"counter return",
 		),
 	})
