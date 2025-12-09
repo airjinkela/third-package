@@ -28,8 +28,8 @@ type ConnectionRecord struct {
 
 func NewConnectionRecordList(dumpFile string) *ConnectionRecordList {
 	return &ConnectionRecordList{
-		recordAddChan:    make(chan *ConnectionRecord, 500),
-		recordRemoveChan: make(chan *ConnectionRecord, 500),
+		recordAddChan:    make(chan *ConnectionRecord, 100),
+		recordRemoveChan: make(chan *ConnectionRecord, 100),
 		records:          make(map[string]*ConnectionRecord, 500),
 		mu:               sync.RWMutex{},
 		dumpFile:         dumpFile,
@@ -62,11 +62,15 @@ func (l *ConnectionRecordList) Add(record *ConnectionRecord) {
 	if r, exists := l.records[key]; exists {
 		r.Protocol = record.Protocol
 	} else {
+		startTime := record.StartTime
+		if startTime.IsZero() {
+			startTime = time.Now()
+		}
 		l.records[key] = &ConnectionRecord{
 			Protocol:  record.Protocol,
 			SrcAddr:   record.SrcAddr,
 			DestAddr:  record.DestAddr,
-			StartTime: record.StartTime,
+			StartTime: startTime,
 		}
 	}
 }

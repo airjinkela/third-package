@@ -1,11 +1,13 @@
 package socks5
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 type Server struct {
 	base.Server
 	listener net.Listener
+	so_mark  int
 }
 
 func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
@@ -28,8 +31,14 @@ func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Ser
 			Cfg:      cfg,
 			Rewriter: rw,
 			Recorder: rc,
-			Cache:    expirable.NewLRU[string, struct{}](1024, nil, 30*time.Minute),
+			Cache:    expirable.NewLRU[string, struct{}](512, nil, 30*time.Minute),
+			BufioReaderPool: sync.Pool{
+				New: func() interface{} {
+					return bufio.NewReaderSize(nil, 16*1024)
+				},
+			},
 		},
+		so_mark: base.SO_MARK,
 	}
 }
 
@@ -135,12 +144,12 @@ func (s *Server) handleConnect(src net.Conn, req *socks.Request) error {
 	srcAddr := src.RemoteAddr().String()
 	destAddr := req.Addr.String()
 
-	dest, err := net.Dial("tcp", destAddr)
+	dest, err := base.Connect(destAddr, s.so_mark)
 	if err != nil {
 		if err := socks.NewReply(socks.HostUnreachable, nil).Write(src); err != nil {
 			slog.Error("socks.NewReply.Write", slog.String("srcAddr", srcAddr), slog.Any("error", err))
 		}
-		return fmt.Errorf("net.Dial: %w, dest: %s", err, destAddr)
+		return fmt.Errorf("base.Connect: %w, dest: %s", err, destAddr)
 	}
 
 	if err := socks.NewReply(socks.Succeeded, nil).Write(src); err != nil {

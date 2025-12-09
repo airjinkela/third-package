@@ -1,10 +1,12 @@
 package http
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
@@ -19,6 +21,7 @@ import (
 
 type Server struct {
 	base.Server
+	so_mark int
 }
 
 func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
@@ -27,8 +30,14 @@ func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Ser
 			Cfg:      cfg,
 			Rewriter: rw,
 			Recorder: rc,
-			Cache:    expirable.NewLRU[string, struct{}](1024, nil, 30*time.Minute),
+			Cache:    expirable.NewLRU[string, struct{}](512, nil, 30*time.Minute),
+			BufioReaderPool: sync.Pool{
+				New: func() interface{} {
+					return bufio.NewReaderSize(nil, 16*1024)
+				},
+			},
 		},
+		so_mark: base.SO_MARK,
 	}
 }
 
@@ -116,7 +125,7 @@ func (s *Server) rewrite(req *http.Request, srcAddr, dstAddr string) (*http.Requ
 func (s *Server) handleTunneling(w http.ResponseWriter, req *http.Request) {
 	slog.Info("HTTP CONNECT request", slog.String("host", req.Host))
 	destAddr := req.Host
-	dest, err := base.Connect(destAddr)
+	dest, err := base.Connect(destAddr, s.so_mark)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return

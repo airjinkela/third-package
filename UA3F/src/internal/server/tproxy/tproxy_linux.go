@@ -3,11 +3,13 @@
 package tproxy
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,12 +37,18 @@ type Server struct {
 func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
 	s := &Server{
 		Server: base.Server{
-			Cfg:      cfg,
-			Rewriter: rw,
-			Recorder: rc,
-			Cache:    expirable.NewLRU[string, struct{}](1024, nil, 30*time.Minute),
+			Cfg:        cfg,
+			Rewriter:   rw,
+			Recorder:   rc,
+			Cache:      expirable.NewLRU[string, struct{}](512, nil, 30*time.Minute),
+			SkipIpChan: make(chan *net.IP, 512),
+			BufioReaderPool: sync.Pool{
+				New: func() interface{} {
+					return bufio.NewReaderSize(nil, 16*1024)
+				},
+			},
 		},
-		so_mark:          netfilter.SO_MARK,
+		so_mark:          base.SO_MARK,
 		tproxyFwMark:     "0x1c9",
 		tproxyRouteTable: "0x1c9",
 		ignoreMark: []string{
@@ -55,8 +63,10 @@ func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Ser
 		},
 		NftSetup:   s.nftSetup,
 		NftCleanup: s.nftCleanup,
+		NftWatch:   s.NftWatch,
 		IptSetup:   s.iptSetup,
 		IptCleanup: s.iptCleanup,
+		IptWatch:   s.IptWatch,
 	}
 	return s
 }
@@ -127,10 +137,10 @@ func (s *Server) HandleClient(client net.Conn) {
 		return
 	}
 
-	target, err := base.ConnectWithMark(addr, s.so_mark)
+	target, err := base.Connect(addr, s.so_mark)
 	if err != nil {
 		_ = client.Close()
-		slog.Warn("base.ConnectWithMark", slog.String("addr", addr), slog.Any("error", err))
+		slog.Warn("base.Connect", slog.String("addr", addr), slog.Any("error", err))
 		return
 	}
 
