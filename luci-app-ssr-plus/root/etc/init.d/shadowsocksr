@@ -211,7 +211,7 @@ start_dns() {
 	local run_mode="$(uci_get_by_type global run_mode)"
 
 	if [ "$ssrplus_dns" != "0" ]; then
-		if command -v iptables-legacy >/dev/null 2>&1; then
+		if command -v ipset >/dev/null 2>&1; then
 			if [ -n "$dnsserver" ]; then
 				add_dns_into_ipset $run_mode $dnsserver
 			fi
@@ -238,7 +238,7 @@ start_dns() {
 			output=$(for i in $(echo $mosdns_dnsserver | sed "s/,/ /g"); do
 				dnsserver=${i%:*}
 				dnsserver=${i##*/}
-				if command -v iptables-legacy >/dev/null 2>&1; then
+				if command -v ipset >/dev/null 2>&1; then
 					add_dns_into_ipset $run_mode $dnsserver
 				fi
 				echo "            - addr: $i"
@@ -587,7 +587,7 @@ start_udp() {
 		gen_config_file $UDP_RELAY_SERVER $type 2 $tmp_udp_local_port
 		ln_start_bin $(first_type tuic-client) tuic-client --config $udp_config_file
 		ln_start_bin $(first_type ipt2socks) ipt2socks -U -b 0.0.0.0 -4 -s 127.0.0.1 -p $tmp_udp_local_port -l $tmp_udp_port
-		echolog "UDP TPROXY Relay:tuic-client $($(first_type tuic-client) --version) Started!"
+		echolog "UDP TPROXY Relay:$($(first_type tuic-client) --version) Started!"
 		echolog "TUIC UDP TPROXY Relay not supported!"
 		#redir_udp=0
 		#ARG_UDP=""
@@ -879,7 +879,7 @@ start_shunt() {
 		gen_config_file $SHUNT_SERVER $type 3 $tmp_port		# make a tuic socks :304
 		ln_start_bin $(first_type tuic-client) tuic-client --config $shunt_dns_config_file
 		shunt_dns_command $tmp_port
-		echolog "Netflix Separated Shunt Server:tuic-client $($(first_type tuic-client) --version) Started!"
+		echolog "Netflix Separated Shunt Server:$($(first_type tuic-client) --version) Started!"
 		# FIXME: ipt2socks cannot handle udp reply from tuic
 		#redir_udp=0
 		;;
@@ -985,7 +985,7 @@ start_local() {
 		if [ "$_local" == "2" ]; then
 			gen_config_file $LOCAL_SERVER $type 4 $local_port
 			ln_start_bin $(first_type tuic-client) tuic-client --config $local_config_file
-			echolog "Global Socks5:tuic-client $($(first_type tuic-client) --version) Started!"
+			echolog "Global Socks5:$($(first_type tuic-client) --version) Started!"
 		fi
 		;;
 	shadowtls)
@@ -1040,7 +1040,15 @@ Start_Run() {
 	if [ "$_local" == "1" ]; then
 		local socks_port=$(uci_get_by_type socks5_proxy local_port)
 		tcp_config_file=$TMP_PATH/local-ssr-retcp.json
-		[ "$mode" == "tcp,udp" ] && tcp_config_file=$TMP_PATH/local-udp-ssr-retcp.json
+		[ "$mode" == "tcp,udp" ] && {
+			if command -v nft >/dev/null 2>&1; then
+				# nftables / fw4
+				tcp_config_file=$TMP_PATH/local-nft-ssr-retcp.json
+			else
+				# iptables / fw3
+				tcp_config_file=$TMP_PATH/local-udp-ssr-retcp.json
+			fi
+		}
 	fi
 	local tcp_port=$(uci_get_by_name $GLOBAL_SERVER local_port)
 	local type=$(uci_get_by_name $GLOBAL_SERVER type)
@@ -1096,9 +1104,9 @@ Start_Run() {
 		if [ -n $socks_port ] && [ $GLOBAL_SERVER == $LOCAL_SERVER ]; then #start a new tuic instance
 			gen_config_file $GLOBAL_SERVER $type 4 $socks_port
 			ln_start_bin $(first_type tuic-client) tuic-client --config $local_config_file
-			echolog "Global Socks5:tuic-client $($(first_type tuic-client) --version) Started!"
+			echolog "Global Socks5:$($(first_type tuic-client) --version) Started!"
 		fi
-		echolog "Main node:tuic-client $($(first_type tuic-client) --version) Started!"
+		echolog "Main node:$($(first_type tuic-client) --version) Started!"
 		;;
 	shadowtls)
 		if [ -z "$socks_port" ]; then
@@ -1318,7 +1326,13 @@ start_server() {
 			;;
 		socks5)
 			[ -e /proc/sys/net/ipv6 ] && local listenip='-i ::'
-			ln_start_bin $(first_type microsocks) microsocks $listenip -p $(uci_get_by_name $1 server_port) -1 -u $(uci_get_by_name $1 username) -P $(uci_get_by_name $1 password) ssr-server$server_count
+			local username=$(uci_get_by_name $1 username)
+			local password=$(uci_get_by_name $1 password)
+			local auth_opts=""
+			if [ -n "$username" ] && [ -n "$password" ]; then
+				auth_opts="-u $username -P $password"
+			fi
+			ln_start_bin $(first_type microsocks) microsocks $listenip -p $(uci_get_by_name $1 server_port) -1 $auth_opts ssr-server$server_count
 			echolog "Server:Socks5 Server$server_count Started!"
 			;;
 		esac
@@ -1397,6 +1411,45 @@ start_monitor() {
 	fi
 }
 
+start_xhttp_addr() {
+	local xhttp_addr_file="/etc/ssrplus/xhttp_address.txt"
+	local tmp_file="/tmp/.xhttp_addr.tmp"
+
+	# 收集所有 xhttp_extra 地址，去掉空行并去重排序
+	{
+		for sec in "$GLOBAL_SERVER" "$SHUNT_SERVER" "$UDP_RELAY_SERVER"; do
+			local extra
+			extra=$(uci_get_by_name "$sec" xhttp_extra)
+			[ -n "$extra" ] && \
+				echo "$extra" | sed -n 's/.*"address":[[:space:]]*"\([^"]*\)".*/\1/p'
+		done
+	} | grep -v '^$' | sort -u > "$tmp_file"
+
+	# 如果没有 xhttp_extra 地址，删除旧文件并退出
+	if [ ! -s "$tmp_file" ]; then
+		[ -f "$xhttp_addr_file" ] && rm -f "$xhttp_addr_file"
+		rm -f "$tmp_file"
+		return 0
+	fi
+
+	# 比较 MD5 判断 xhttp_extra 地址是否有变化
+	local md5_new md5_old
+	md5_new=$(md5sum "$tmp_file" | awk '{print $1}')
+	if [ -f "$xhttp_addr_file" ]; then
+		md5_old=$(md5sum "$xhttp_addr_file" | awk '{print $1}')
+	else
+		md5_old=""
+	fi
+
+	# MD5 不同更新 xhttp_extra 地址文件
+	if [ "$md5_new" != "$md5_old" ]; then
+		mv -f "$tmp_file" "$xhttp_addr_file"
+		logger -t ssrplus-xhttp "xhttp_address.txt updated"
+	else
+		rm -f "$tmp_file"
+	fi
+}
+
 start_rules() {
 	local server=$(get_host_ip $GLOBAL_SERVER)
 	local local_port=$(uci_get_by_name $GLOBAL_SERVER local_port)
@@ -1464,7 +1517,7 @@ start_rules() {
 		-M "$(uci_get_by_type global netflix_proxy 0)" \
 		-I "/etc/ssrplus/netflixip.list" \
 		$(get_arg_out) $(gfwmode) $ARG_UDP $ARG_A
-		
+
 	return $?
 }
 
@@ -1475,7 +1528,16 @@ start() {
 	echo "conf-dir=${TMP_DNSMASQ_PATH}" >"$DNSMASQ_CONF_DIR/dnsmasq-ssrplus.conf"
 	if load_config; then
 		Start_Run
+		start_xhttp_addr
 		start_rules
+		# Restore ipsets after rules creation
+		if command -v ipset >/dev/null 2>&1; then
+			for setname in gfwlist china blacklist whitelist netflix; do
+				if [ -f "/tmp/ssrplus_save/${setname}.save" ]; then
+					ipset restore -! < "/tmp/ssrplus_save/${setname}.save" 2>/dev/null
+				fi
+			done
+		fi
 		start_dns
 		add_cron
 		start_switch
@@ -1487,15 +1549,31 @@ start() {
 			echolog "未启动主节点，广告过滤正在加载。"
 			cp -f /etc/ssrplus/ad.conf $TMP_DNSMASQ_PATH/
 			if [ -f "$TMP_DNSMASQ_PATH/ad.conf" ]; then
-				for line in $(cat /etc/ssrplus/black.list); do sed -i "/$line/d" $TMP_DNSMASQ_PATH/ad.conf; done
-				for line in $(cat /etc/ssrplus/white.list); do sed -i "/$line/d" $TMP_DNSMASQ_PATH/ad.conf; done
-				for line in $(cat /etc/ssrplus/deny.list); do sed -i "/$line/d" $TMP_DNSMASQ_PATH/ad.conf; done
+				# Optimize: Batch filter using grep instead of looping sed
+				for list_file in /etc/ssrplus/black.list /etc/ssrplus/white.list /etc/ssrplus/deny.list; do
+					if [ -s "$list_file" ]; then
+						# Clean list file (remove comments and empty lines)
+						grep -vE '^\s*#|^\s*$' "$list_file" > "${list_file}.clean"
+						if [ -s "${list_file}.clean" ]; then
+							grep -v -F -f "${list_file}.clean" "$TMP_DNSMASQ_PATH/ad.conf" > "$TMP_DNSMASQ_PATH/ad.conf.tmp"
+							mv "$TMP_DNSMASQ_PATH/ad.conf.tmp" "$TMP_DNSMASQ_PATH/ad.conf"
+						fi
+						rm -f "${list_file}.clean"
+					fi
+				done
 			fi
 			echolog "广告过滤加载完毕。"
 		fi
 	fi
 	/etc/init.d/dnsmasq restart >/dev/null 2>&1
 	check_server
+	if command -v nft >/dev/null 2>&1; then
+		local CURRENT_SERVER="$(uci_get_by_type global global_server nil)"
+		if [ "$CURRENT_SERVER" != "nil" ]; then
+			uci set shadowsocksr.@global[0].old_global_server="$CURRENT_SERVER"
+			uci commit shadowsocksr
+		fi
+	fi
 	start_server
 	start_monitor
 	clean_log
@@ -1510,14 +1588,26 @@ boot() {
 }
 
 stop() {
+	# Save ipsets before stopping to persist transparent proxy state
+	if command -v ipset >/dev/null 2>&1; then
+		mkdir -p /tmp/ssrplus_save
+		ipset save gfwlist > /tmp/ssrplus_save/gfwlist.save 2>/dev/null
+		ipset save china > /tmp/ssrplus_save/china.save 2>/dev/null
+		ipset save blacklist > /tmp/ssrplus_save/blacklist.save 2>/dev/null
+		ipset save whitelist > /tmp/ssrplus_save/whitelist.save 2>/dev/null
+		ipset save netflix > /tmp/ssrplus_save/netflix.save 2>/dev/null
+	fi
 	unlock
 	set_lock
 	if command -v nft >/dev/null 2>&1; then
 		/usr/bin/ssr-rules -K
-		#local CLEANUP_PERSISTENCE="$(uci_get_by_type global global_server nil)"
-		#if [ "$CLEANUP_PERSISTENCE" == "nil" ]; then
-		#	/usr/bin/ssr-rules -X
-		#fi
+		local OLD_SERVER="$(uci_get_by_type global old_global_server nil)"
+		local NEW_SERVER="$(uci_get_by_type global global_server nil)"
+		if [ "$OLD_SERVER" != "nil" ] && [ "$NEW_SERVER" != "nil" ] && [ "$OLD_SERVER" != "$NEW_SERVER" ]; then
+			/usr/bin/ssr-rules -X
+		fi
+		uci delete shadowsocksr.@global[0].old_global_server 2>/dev/null
+		uci commit shadowsocksr
 	fi
 	/usr/bin/ssr-rules -f
 	local srulecount=0
@@ -1596,6 +1686,7 @@ reset() {
 	stop
 	set_lock
 	rm -rf /etc/config/shadowsocksr $LOG_FILE
+	[ -f "/etc/ssrplus/xhttp_address.txt" ] && rm -f /etc/ssrplus/xhttp_address.txt
 	touch /etc/config/shadowsocksr $LOG_FILE
 	cp /usr/share/shadowsocksr/shadowsocksr.config /etc/config/shadowsocksr
 	unset_lock

@@ -9,6 +9,7 @@ import (
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/sunbk201/ua3f/internal/netfilter"
+	"github.com/sunbk201/ua3f/internal/server/base"
 	"sigs.k8s.io/knftables"
 )
 
@@ -18,6 +19,8 @@ const (
 )
 
 var RuleTTL = []string{
+	"-m", "mark",
+	"!", "--mark", strconv.Itoa(base.SO_INJECT_MARK),
 	"-j", "TTL",
 	"--ttl-set", "64",
 }
@@ -49,7 +52,7 @@ func (s *Server) iptSetup() error {
 	if err != nil {
 		return err
 	}
-	if s.cfg.SetTTL {
+	if s.cfg.TTL {
 		err = s.IptSetTTL(ipt)
 		if err != nil {
 			return err
@@ -61,13 +64,13 @@ func (s *Server) iptSetup() error {
 			}
 		}
 	}
-	if (s.cfg.DelTCPTimestamp || s.cfg.SetTCPInitialWindow) && !s.cfg.SetIPID {
+	if (s.cfg.TCPTimeStamp || s.cfg.TCPInitialWindow) && !s.cfg.IPID {
 		err = s.IptHookTCPSyn(ipt)
 		if err != nil {
 			return err
 		}
 	}
-	if s.cfg.SetIPID {
+	if s.cfg.IPID {
 		err = s.IptSetIP(ipt)
 		if err != nil {
 			return err
@@ -84,7 +87,7 @@ func (s *Server) iptCleanup() error {
 	_ = ipt.DeleteIfExists(table, chain, RuleTTL...)
 	_ = ipt.DeleteIfExists(table, chain, RuleIP...)
 	_ = ipt.DeleteIfExists(table, chain, RuleHookTCPSyn...)
-	if s.cfg.SetTTL {
+	if s.cfg.TTL {
 		_ = s.NftCleanup()
 	}
 	return nil

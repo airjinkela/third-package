@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sunbk201/ua3f/internal/netfilter"
+	"github.com/sunbk201/ua3f/internal/server/base"
 	"sigs.k8s.io/knftables"
 )
 
@@ -47,7 +48,7 @@ func (s *Server) nftCleanup() error {
 	return nil
 }
 
-func (s *Server) NftWatch() {
+func (s *Server) nftWatch() {
 	go func() {
 		_ = s.NftAddSkipDomains()
 
@@ -117,7 +118,7 @@ func (s *Server) NftSetNfqueue(tx *knftables.Transaction, table *knftables.Table
 	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
 		Rule: knftables.Concat(
-			fmt.Sprintf("ct mark %d", s.NotHTTPCtMark),
+			fmt.Sprintf("mark %d", base.SO_INJECT_MARK),
 			"counter return",
 		),
 	})
@@ -125,10 +126,32 @@ func (s *Server) NftSetNfqueue(tx *knftables.Transaction, table *knftables.Table
 	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
 		Rule: knftables.Concat(
-			"ct direction original",
-			"ct state established",
-			"ip length > 40",
-			fmt.Sprintf("counter queue num %d bypass", s.nfqServer.QueueNum),
+			fmt.Sprintf("ct mark %d", s.NotHTTPCtMark),
+			"counter return",
 		),
 	})
+
+	if netfilter.NftIHAvailable() {
+		tx.Add(&knftables.Rule{
+			Chain: chain.Name,
+			Rule: knftables.Concat(
+				"meta l4proto tcp",
+				"ct direction original",
+				"ct state established",
+				"@ih,0,8 & 0 == 0",
+				fmt.Sprintf("counter queue num %d bypass", s.nfqServer.QueueNum),
+			),
+		})
+	} else {
+		tx.Add(&knftables.Rule{
+			Chain: chain.Name,
+			Rule: knftables.Concat(
+				"meta l4proto tcp",
+				"ct direction original",
+				"ct state established",
+				"ip length > 40",
+				fmt.Sprintf("counter queue num %d bypass", s.nfqServer.QueueNum),
+			),
+		})
+	}
 }

@@ -1,6 +1,7 @@
 package statistics
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,7 +14,10 @@ type RewriteRecordList struct {
 	recordAddChan chan *RewriteRecord
 	records       map[string]*RewriteRecord
 	mu            sync.RWMutex
-	dumpFile      string
+
+	dumpRecords []*RewriteRecord
+	dumpFile    string
+	dumpWriter  *bufio.Writer
 }
 
 type RewriteRecord struct {
@@ -26,9 +30,11 @@ type RewriteRecord struct {
 func NewRewriteRecordList(dumpFile string) *RewriteRecordList {
 	return &RewriteRecordList{
 		recordAddChan: make(chan *RewriteRecord, 100),
-		records:       make(map[string]*RewriteRecord, 100),
+		records:       make(map[string]*RewriteRecord, 300),
 		mu:            sync.RWMutex{},
+		dumpRecords:   make([]*RewriteRecord, 0, 300),
 		dumpFile:      dumpFile,
+		dumpWriter:    bufio.NewWriter(nil),
 	}
 }
 
@@ -78,21 +84,29 @@ func (l *RewriteRecordList) Dump() {
 		}
 	}()
 
+	l.dumpRecords = l.dumpRecords[:0]
 	l.mu.RLock()
-	var statList []RewriteRecord
 	for _, record := range l.records {
-		statList = append(statList, *record)
+		l.dumpRecords = append(l.dumpRecords, record)
 	}
 	l.mu.RUnlock()
 
-	sort.SliceStable(statList, func(i, j int) bool {
-		return statList[i].Count > statList[j].Count
+	sort.SliceStable(l.dumpRecords, func(i, j int) bool {
+		return l.dumpRecords[i].Count > l.dumpRecords[j].Count
 	})
 
-	for _, record := range statList {
-		line := fmt.Sprintf("%s %d %sSEQSEQ%s\n", record.Host, record.Count, record.OriginalUA, record.MockedUA)
-		if _, err := f.WriteString(line); err != nil {
-			slog.Error("os.File.WriteString", slog.Any("error", err))
+	l.dumpWriter.Reset(f)
+	defer func() {
+		if err := l.dumpWriter.Flush(); err != nil {
+			slog.Error("bufio.Writer.Flush", slog.Any("error", err))
+		}
+	}()
+
+	for _, record := range l.dumpRecords {
+		_, err := fmt.Fprintf(l.dumpWriter, "%s %d %sSEQSEQ%s\n",
+			record.Host, record.Count, record.OriginalUA, record.MockedUA)
+		if err != nil {
+			slog.Error("Dump fmt.Fprintf", slog.Any("error", err))
 		}
 	}
 }

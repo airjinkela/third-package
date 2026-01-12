@@ -8,10 +8,12 @@
 
 English | [简体中文](README.md)
 
-UA3F is an HTTP Header rewriting tool that transparently rewrites HTTP request headers (such as User-Agent) as an HTTP, SOCKS5, TPROXY, REDIRECT, or NFQUEUE server.
+UA3F is an HTTP rewriting tool that transparently rewrites HTTP (e.g., User-Agent) as an HTTP, SOCKS5, TPROXY, REDIRECT, or NFQUEUE server.
 
 ## Features
 
+- Supports bidirectional rewriting of HTTP Headers and Body
+- Supports HTTP URL redirection: 302, 307, Header
 - Multiple server modes: HTTP, SOCKS5, TPROXY, REDIRECT, NFQUEUE([UA2F](https://github.com/Zxilly/UA2F))
 - Highly flexible rewriting rule system with multiple rule types and rewriting strategies
 - Real-time statistics dashboard with traffic modification monitoring and analysis
@@ -26,18 +28,18 @@ UA3F is an HTTP Header rewriting tool that transparently rewrites HTTP request h
 
 <table>
   <tr>
-    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-luci160.png" alt="UA3F-LuCI"></td>
-    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-rule160.png" alt="UA3F-Rules"></td>
+    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-270-luci.png" alt="UA3F-LuCI"></td>
+    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-270-rule.png" alt="UA3F-Rules"></td>
   </tr>
 </table>
 
 ## Deployment
 
-Three deployment methods are available:
+Four deployment methods are available:
 
-- **IPK Package Installation:**
+- **OpenWrt Package Installation:**
 
-  Pre-compiled versions for common architectures are available on the [Release](https://github.com/SunBK201/UA3F/releases) page. Download the appropriate version for your device architecture and install it on OpenWrt using `opkg install`.
+  Pre-compiled versions for common architectures are available on the [Release](https://github.com/SunBK201/UA3F/releases) page. Download the appropriate version for your device architecture and install it on OpenWrt.
 
 - **OpenWrt Compilation:**
 
@@ -57,11 +59,16 @@ Three deployment methods are available:
   docker run -p 1080:1080 sunbk201/ua3f -f FFF
   ```
 
+- **Binary Download**
+  Pre-compiled binaries for common architectures are available on the [Release](https://github.com/SunBK201/UA3F/releases) page. Download the appropriate binary for your device architecture.
+
 ## Usage
 
-UA3F supports LuCI Web interface. Navigate to Services -> UA3F for configuration.
+UA3F supports OpenWrt LuCI Web interface. Navigate to Services -> UA3F for configuration.
 
 For detailed tutorial, please visit: [UA3F User Guide](https://sunbk201public.notion.site/UA3F-2a21f32cbb4b80669e04ec1f053d0333)
+
+UA3F supports configuration via a YAML file. You can specify the configuration file path using the `-c` option, and generate a template configuration file using the `-g` option. An example configuration file can be found at [docs/config.yaml](docs/config.yaml).
 
 Device and system information regex reference:
 
@@ -87,16 +94,17 @@ sudo -u shellcrash /usr/bin/ua3f
 
 Command line parameters:
 
+- `-c <config path>`: Custom configuration file path
+- `-g`: Generate a template configuration file config.yaml in the current directory
 - `-m <mode>`: Server mode. Supports HTTP, SOCKS5, TPROXY, REDIRECT. Default: SOCKS5
 - `-b <bind addr>`: Custom bind address. Default: 127.0.0.1
 - `-p <port>`: Port number. Default: 1080
 - `-l <log level>`: Log level. Default: info. Options: debug. Default log location: `/var/log/ua3f.log`
-- `-x`: Rewrite mode. Supports GLOBAL, DIRECT, RULES. Default: GLOBAL
+- `-x`: Rewrite mode. Supports GLOBAL, DIRECT, RULE. Default: GLOBAL
 - `-f <UA>`: Custom User-Agent. Default: FFF
 - `-r <regex>`: Custom regex to match User-Agent. Default: empty (all User-Agents will be rewritten)
 - `-s`: Partial replacement, only replace the regex matched portion
-- `-z`: Rewrite rules in JSON string format. Only effective in RULES rewrite mode
-- `-o ttl,tcpts,ipid`: Enable TTL, TCP Timestamp, and IP ID obfuscation
+- `-z`: Rewrite rules in JSON string format. Only effective in RULE rewrite mode
 
 </details>
 
@@ -120,11 +128,43 @@ UA3F supports 3 different rewrite strategies:
 | ---------------- | -------------------------------- | --------------- | --------------------------- |
 | **GLOBAL**       | Rewrite all requests             | User-Agent      | All server modes            |
 | **DIRECT**       | No rewriting, pure forwarding    | None            | All server modes            |
-| **RULES**        | Rewrite based on rewriting rules | Customizable    | HTTP/SOCKS5/TPROXY/REDIRECT |
+| **RULE**         | Rewrite based on rewriting rules | Customizable    | HTTP/SOCKS5/TPROXY/REDIRECT |
+
+Rule Types:
+
+| Rule Type      | Description                                       |
+| -------------- | ------------------------------------------------- |
+| DOMAIN         | Match based on domain name                        |
+| DOMAIN-SUFFIX  | Match based on domain suffix                      |
+| DOMAIN-KEYWORD | Match based on domain keyword                     |
+| IP-CIDR        | Match based on IP address range                   |
+| SRC-IP         | Match based on source IP address                  |
+| DST-PORT       | Match based on destination port                   |
+| HEADER-KEYWORD | Match based on request header keyword             |
+| HEADER-REGEX   | Match using regular expression on request headers |
+| URL-REGEX      | Match using regular expression on request URL     |
+
+Rewrite Actions:
+
+| Action Type   | Description                                                   |
+| ------------- | ------------------------------------------------------------- |
+| DIRECT        | Allow directly without rewriting                              |
+| DELETE        | Delete the specified header                                   |
+| ADD           | Add the specified header with the given content               |
+| REPLACE       | Replace the specified header with the given content           |
+| REPLACE-REGEX | Replace the part of the specified header that matches a regex |
+| DROP          | Drop the request                                              |
+
+URL Redirection Actions:
+| Action Type | Description |
+| ----------------- | ------------------------------- |
+| REDIRECT-302 | Return a 302 redirect response |
+| REDIRECT-307 | Return a 307 redirect response |
+| REDIRECT-HEADER | Modify request Header for redirection, transparent to client |
 
 ## Clash Configuration
 
-See [Clash Configuration](docs/Clash.md)
+See [Clash Configuration](docs/clash/Clash.md)
 
 ## References & Thanks
 

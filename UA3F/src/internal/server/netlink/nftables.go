@@ -8,11 +8,12 @@ import (
 	"log/slog"
 
 	"github.com/sunbk201/ua3f/internal/netfilter"
+	"github.com/sunbk201/ua3f/internal/server/base"
 	"sigs.k8s.io/knftables"
 )
 
 func (s *Server) nftSetup() error {
-	if !s.cfg.SetTTL && !s.cfg.DelTCPTimestamp && !s.cfg.SetIPID {
+	if !s.cfg.TTL && !s.cfg.TCPTimeStamp && !s.cfg.IPID {
 		slog.Info("No packet modification features enabled, skipping nftables setup")
 		return nil
 	}
@@ -25,21 +26,21 @@ func (s *Server) nftSetup() error {
 	tx := nft.NewTransaction()
 	tx.Add(s.Nftable)
 
-	if s.cfg.SetTTL {
+	if s.cfg.TTL {
 		s.NftSetTTL(tx, s.Nftable)
 	}
-	if (s.cfg.DelTCPTimestamp || s.cfg.SetTCPInitialWindow) && !s.cfg.SetIPID {
+	if (s.cfg.TCPTimeStamp || s.cfg.TCPInitialWindow) && !s.cfg.IPID {
 		s.NftHookTCPSyn(tx, s.Nftable)
 	}
-	if s.cfg.SetIPID {
-		s.NftSetIP(tx, s.Nftable)
+	if s.cfg.IPID {
+		s.NftHookIP(tx, s.Nftable)
 	}
 
 	if err := nft.Run(context.TODO(), tx); err != nil {
 		return err
 	}
 
-	if s.cfg.SetTTL && netfilter.FlowOffloadEnabled() {
+	if s.cfg.TTL && netfilter.FlowOffloadEnabled() {
 		lanDev, err := netfilter.GetLanDevice()
 		if err != nil {
 			slog.Warn("nftSetup netfilter.GetLanDevice", slog.Any("error", err))
@@ -76,14 +77,22 @@ func (s *Server) NftSetTTL(tx *knftables.Transaction, table *knftables.Table) {
 		Hook:     knftables.PtrTo(knftables.PostroutingHook),
 		Priority: knftables.PtrTo(knftables.ManglePriority),
 	}
-	rule := &knftables.Rule{
+	tx.Add(chain)
+
+	tx.Add(&knftables.Rule{
+		Chain: chain.Name,
+		Rule: knftables.Concat(
+			fmt.Sprintf("mark %d", base.SO_INJECT_MARK),
+			"counter return",
+		),
+	})
+
+	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
 		Rule: knftables.Concat(
 			"ip ttl set 64",
 		),
-	}
-	tx.Add(chain)
-	tx.Add(rule)
+	})
 }
 
 func (s *Server) NftSetTTLIngress(nft knftables.Interface, table *knftables.Table, device string) error {
@@ -135,7 +144,7 @@ func (s *Server) NftHookTCPSyn(tx *knftables.Transaction, table *knftables.Table
 	})
 }
 
-func (s *Server) NftSetIP(tx *knftables.Transaction, table *knftables.Table) {
+func (s *Server) NftHookIP(tx *knftables.Transaction, table *knftables.Table) {
 	chain := &knftables.Chain{
 		Name:     "HELPER_QUEUE",
 		Table:    table.Name,
@@ -143,15 +152,25 @@ func (s *Server) NftSetIP(tx *knftables.Transaction, table *knftables.Table) {
 		Hook:     knftables.PtrTo(knftables.PostroutingHook),
 		Priority: knftables.PtrTo(knftables.ManglePriority),
 	}
-	rule := &knftables.Rule{
+	tx.Add(chain)
+
+	if s.cfg.TCPInitialWindow || s.cfg.TCPTimeStamp {
+		tx.Add(&knftables.Rule{
+			Chain: chain.Name,
+			Rule: knftables.Concat(
+				"tcp flags syn",
+				fmt.Sprintf("counter queue num %d bypass", s.nfqServer.QueueNum),
+			),
+		})
+	}
+	tx.Add(&knftables.Rule{
 		Chain: chain.Name,
 		Rule: knftables.Concat(
+			"ip id != 0",
 			"meta l4proto tcp",
 			fmt.Sprintf("counter queue num %d bypass", s.nfqServer.QueueNum),
 		),
-	}
-	tx.Add(chain)
-	tx.Add(rule)
+	})
 }
 
 // unused currently

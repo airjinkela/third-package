@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sunbk201/ua3f/internal/netfilter"
+	"github.com/sunbk201/ua3f/internal/server/base"
 	"sigs.k8s.io/knftables"
 )
 
@@ -54,7 +55,7 @@ func (s *Server) nftCleanup() error {
 	return nil
 }
 
-func (s *Server) NftWatch() {
+func (s *Server) nftWatch() {
 	go func() {
 		_ = s.NftAddSkipDomains()
 
@@ -93,6 +94,16 @@ func (s *Server) NftSetTproxy(tx *knftables.Transaction, table *knftables.Table)
 				"mark", s.tproxyFwMark,
 				"mark set 7894",
 				fmt.Sprintf("tproxy ip to 127.0.0.1:%d", s.Cfg.Port),
+				"counter accept",
+			),
+		})
+		tx.Add(&knftables.Rule{
+			Chain: sidecar.Name,
+			Rule: knftables.Concat(
+				"meta l4proto tcp",
+				"mark", s.tproxyFwMark,
+				"mark set 7894",
+				fmt.Sprintf("tproxy ip6 to [::1]:%d", s.Cfg.Port),
 				"counter accept",
 			),
 		})
@@ -175,6 +186,15 @@ func (s *Server) NftSetTproxy(tx *knftables.Transaction, table *knftables.Table)
 			"counter accept",
 		),
 	})
+	tx.Add(&knftables.Rule{
+		Chain: prerouting.Name,
+		Rule: knftables.Concat(
+			"meta l4proto tcp",
+			"mark", s.tproxyFwMark,
+			fmt.Sprintf("tproxy ip6 to [::1]:%d", s.Cfg.Port),
+			"counter accept",
+		),
+	})
 
 	// default less hit. sc.
 	tx.Add(&knftables.Rule{
@@ -183,6 +203,15 @@ func (s *Server) NftSetTproxy(tx *knftables.Transaction, table *knftables.Table)
 			"meta l4proto tcp",
 			"mark set", s.tproxyFwMark,
 			fmt.Sprintf("tproxy ip to 127.0.0.1:%d", s.Cfg.Port),
+			"counter accept",
+		),
+	})
+	tx.Add(&knftables.Rule{
+		Chain: prerouting.Name,
+		Rule: knftables.Concat(
+			"meta l4proto tcp",
+			"mark set", s.tproxyFwMark,
+			fmt.Sprintf("tproxy ip6 to [::1]:%d", s.Cfg.Port),
 			"counter accept",
 		),
 	})
@@ -240,6 +269,14 @@ func (s *Server) NftSetTproxy(tx *knftables.Transaction, table *knftables.Table)
 		Chain: output.Name,
 		Rule: knftables.Concat(
 			fmt.Sprintf("mark %d", s.so_mark),
+			"counter return",
+		),
+	})
+
+	tx.Add(&knftables.Rule{
+		Chain: output.Name,
+		Rule: knftables.Concat(
+			fmt.Sprintf("mark %d", base.SO_INJECT_MARK),
 			"counter return",
 		),
 	})

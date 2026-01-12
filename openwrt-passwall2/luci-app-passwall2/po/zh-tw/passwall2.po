@@ -292,6 +292,9 @@ msgstr "置顶"
 msgid "Select"
 msgstr "選择"
 
+msgid "Selected:"
+msgstr "已選："
+
 msgid "DeSelect"
 msgstr "反選"
 
@@ -556,6 +559,9 @@ msgstr "自動檢測延迟"
 msgid "Show server address and port"
 msgstr "顯示服務器地址和端口"
 
+msgid "URL Test Address"
+msgstr "URL 測試地址"
+
 msgid "URL Test"
 msgstr "URL 測試"
 
@@ -778,6 +784,9 @@ msgstr "注意，當使用TCP健康檢查時負載均衡的節點配置參數必
 msgid "Node Address"
 msgstr "節點地址"
 
+msgid "Node address cannot be empty."
+msgstr "節點地址不能為空。"
+
 msgid "Node Port"
 msgstr "節點端口"
 
@@ -980,7 +989,7 @@ msgid "Are you sure you want to delete all subscribed nodes?"
 msgstr "您確定要刪除所有已訂閱的節點吗？"
 
 msgid "Manual subscription All"
-msgstr "手動訂閱全部"
+msgstr "手動訂閱全部鏈接"
 
 msgid "This remark already exists, please change a new remark."
 msgstr "此備注已存在，請改一個新的備注。"
@@ -1158,6 +1167,12 @@ msgstr "本地端口"
 
 msgid "Fast Open"
 msgstr "快速打開"
+
+msgid "Pre-connections"
+msgstr "預連接"
+
+msgid "Number of early established connections to reduce latency."
+msgstr "預連接的數量，用於降低延遲。"
 
 msgid "plugin"
 msgstr "插件"
@@ -1877,7 +1892,16 @@ msgid "The configured type also applies to the core specified when manually impo
 msgstr "配置的類型同樣適用於手動導入節點時所指定的核心程序。"
 
 msgid "Group Name"
-msgstr "分组名"
+msgstr "分組名"
+
+msgid "Reassign Group"
+msgstr "調整分組"
+
+msgid "Reassign Node Group"
+msgstr "調整節點分組"
+
+msgid "Search nodes..."
+msgstr "搜尋節點…"
 
 msgid "Using..."
 msgstr "使用中。"

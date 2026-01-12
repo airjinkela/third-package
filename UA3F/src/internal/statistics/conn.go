@@ -1,6 +1,7 @@
 package statistics
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,7 +17,10 @@ type ConnectionRecordList struct {
 	recordRemoveChan chan *ConnectionRecord
 	records          map[string]*ConnectionRecord
 	mu               sync.RWMutex
-	dumpFile         string
+
+	dumpRecords []*ConnectionRecord
+	dumpFile    string
+	dumpWriter  *bufio.Writer
 }
 
 type ConnectionRecord struct {
@@ -32,7 +36,9 @@ func NewConnectionRecordList(dumpFile string) *ConnectionRecordList {
 		recordRemoveChan: make(chan *ConnectionRecord, 100),
 		records:          make(map[string]*ConnectionRecord, 500),
 		mu:               sync.RWMutex{},
+		dumpRecords:      make([]*ConnectionRecord, 0, 500),
 		dumpFile:         dumpFile,
+		dumpWriter:       bufio.NewWriter(nil),
 	}
 }
 
@@ -95,25 +101,32 @@ func (l *ConnectionRecordList) Dump() {
 		}
 	}()
 
+	l.dumpRecords = l.dumpRecords[:0]
 	l.mu.RLock()
-	var statList []ConnectionRecord
-	for _, record := range l.records {
-		statList = append(statList, *record)
+	for _, r := range l.records {
+		l.dumpRecords = append(l.dumpRecords, r)
 	}
 	l.mu.RUnlock()
 
 	// Sort by start time (newest first)
-	sort.SliceStable(statList, func(i, j int) bool {
-		return statList[i].StartTime.After(statList[j].StartTime)
+	sort.SliceStable(l.dumpRecords, func(i, j int) bool {
+		return l.dumpRecords[i].StartTime.After(l.dumpRecords[j].StartTime)
 	})
 
-	for _, record := range statList {
-		duration := time.Since(record.StartTime)
-		line := fmt.Sprintf("%s %s %s %d\n",
+	l.dumpWriter.Reset(f)
+	defer func() {
+		if err := l.dumpWriter.Flush(); err != nil {
+			slog.Error("bufio.Writer.Flush", slog.Any("error", err))
+		}
+	}()
+
+	now := time.Now()
+	for _, record := range l.dumpRecords {
+		duration := now.Sub(record.StartTime)
+		_, err := fmt.Fprintf(l.dumpWriter, "%s %s %s %d\n",
 			record.Protocol, record.SrcAddr, record.DestAddr, int(duration.Seconds()))
-		if _, err := f.WriteString(line); err != nil {
-			slog.Error("os.File.WriteString", slog.Any("error", err))
-			return
+		if err != nil {
+			slog.Error("Dump fmt.Fprintf", slog.Any("error", err))
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package statistics
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,7 +15,10 @@ type PassThroughRecordList struct {
 	recordAddChan chan *PassThroughRecord
 	records       map[string]*PassThroughRecord
 	mu            sync.RWMutex
-	dumpFile      string
+
+	dumpRecords []*PassThroughRecord
+	dumpFile    string
+	dumpWriter  *bufio.Writer
 }
 
 type PassThroughRecord struct {
@@ -29,7 +33,9 @@ func NewPassThroughRecordList(dumpFile string) *PassThroughRecordList {
 		recordAddChan: make(chan *PassThroughRecord, 100),
 		records:       make(map[string]*PassThroughRecord, 100),
 		mu:            sync.RWMutex{},
+		dumpRecords:   make([]*PassThroughRecord, 0, 100),
 		dumpFile:      dumpFile,
+		dumpWriter:    bufio.NewWriter(nil),
 	}
 }
 
@@ -50,6 +56,10 @@ func (l *PassThroughRecordList) Run() {
 }
 
 func (l *PassThroughRecordList) Add(record *PassThroughRecord) {
+	if record.UA == "" {
+		return
+	}
+
 	if strings.HasPrefix(record.UA, "curl/") {
 		record.UA = "curl/*"
 	}
@@ -83,22 +93,29 @@ func (l *PassThroughRecordList) Dump() {
 		}
 	}()
 
+	l.dumpRecords = l.dumpRecords[:0]
 	l.mu.RLock()
-	var statList []PassThroughRecord
-	for _, record := range l.records {
-		statList = append(statList, *record)
+	for _, r := range l.records {
+		l.dumpRecords = append(l.dumpRecords, r)
 	}
 	l.mu.RUnlock()
 
-	sort.SliceStable(statList, func(i, j int) bool {
-		return statList[i].Count > statList[j].Count
+	sort.SliceStable(l.dumpRecords, func(i, j int) bool {
+		return l.dumpRecords[i].Count > l.dumpRecords[j].Count
 	})
 
-	for _, record := range statList {
-		line := fmt.Sprintf("%s %s %d %s\n", record.SrcAddr, record.DestAddr, record.Count, record.UA)
-		if _, err := f.WriteString(line); err != nil {
-			slog.Error("os.File.WriteString", slog.Any("error", err))
-			return
+	l.dumpWriter.Reset(f)
+	defer func() {
+		if err := l.dumpWriter.Flush(); err != nil {
+			slog.Error("bufio.Writer.Flush", slog.Any("error", err))
+		}
+	}()
+
+	for _, record := range l.dumpRecords {
+		_, err := fmt.Fprintf(l.dumpWriter, "%s %s %d %s\n",
+			record.SrcAddr, record.DestAddr, record.Count, record.UA)
+		if err != nil {
+			slog.Error("Dump fmt.Fprintf", slog.Any("error", err))
 		}
 	}
 }

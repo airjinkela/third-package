@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/knftables"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/sunbk201/ua3f/internal/common"
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/netfilter"
 	"github.com/sunbk201/ua3f/internal/rewrite"
@@ -34,7 +35,7 @@ type Server struct {
 	ignoreMark       []string
 }
 
-func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
+func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Server {
 	s := &Server{
 		Server: base.Server{
 			Cfg:        cfg,
@@ -63,10 +64,10 @@ func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Ser
 		},
 		NftSetup:   s.nftSetup,
 		NftCleanup: s.nftCleanup,
-		NftWatch:   s.NftWatch,
+		NftWatch:   s.nftWatch,
 		IptSetup:   s.iptSetup,
 		IptCleanup: s.iptCleanup,
-		IptWatch:   s.IptWatch,
+		IptWatch:   s.iptWatch,
 	}
 	return s
 }
@@ -96,7 +97,8 @@ func (s *Server) Start() error {
 		},
 	}
 
-	if s.listener, err = lc.Listen(context.TODO(), "tcp", s.Cfg.ListenAddr); err != nil {
+	listenAddr := fmt.Sprintf("0.0.0.0:%d", s.Cfg.Port)
+	if s.listener, err = lc.Listen(context.TODO(), "tcp", listenAddr); err != nil {
 		return fmt.Errorf("net.Listen: %w", err)
 	}
 
@@ -144,7 +146,7 @@ func (s *Server) HandleClient(client net.Conn) {
 		return
 	}
 
-	s.ServeConnLink(&base.ConnLink{
+	s.ServeConnLink(&common.ConnLink{
 		LConn: client,
 		RConn: target,
 		LAddr: client.RemoteAddr().String(),

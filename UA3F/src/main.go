@@ -21,14 +21,22 @@ var (
 )
 
 func main() {
-	cfg, showVer := config.Parse()
-
-	log.SetLogConf(cfg.LogLevel)
+	cfg, showVer, err := config.Parse()
+	if err != nil {
+		slog.Error("config.Parse", slog.Any("error", err))
+		return
+	}
 
 	if showVer {
 		fmt.Printf("UA3F version %s\n", appVersion)
 		return
 	}
+
+	if cfg == nil {
+		return
+	}
+
+	log.SetLogConf(cfg.LogLevel)
 
 	log.LogHeader(appVersion, cfg)
 
@@ -45,7 +53,7 @@ func main() {
 		return
 	}
 
-	if cfg.TCPDesync.Enabled {
+	if cfg.Desync.Reorder || cfg.Desync.Inject {
 		desync := desync.New(cfg)
 		addShutdown("desync.Close", desync.Close)
 		if err := desync.Start(); err != nil {

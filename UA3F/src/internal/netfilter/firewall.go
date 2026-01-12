@@ -23,12 +23,13 @@ const (
 )
 
 const (
-	LANSET       = "UA3F_LAN"
-	SKIP_IPSET   = "UA3F_SKIP_IPSET"
-	SKIP_PORTS   = "22,53,51080,51090"
-	FAKEIP_RANGE = "198.18.0.0/16,198.18.0.1/15,28.0.0.1/8"
-	HELPER_QUEUE = 10301
-	DESYNC_QUEUE = 10901
+	LANSET               = "UA3F_LAN"
+	SKIP_IPSET           = "UA3F_SKIP_IPSET"
+	SKIP_PORTS           = "22,51080,51090"
+	FAKEIP_RANGE         = "198.18.0.0/16,198.18.0.1/15,28.0.0.1/8"
+	HELPER_QUEUE         = 10301
+	DESYNC_REORDER_QUEUE = 10901
+	DESYNC_INJECT_QUEUE  = 10902
 )
 
 const (
@@ -155,6 +156,16 @@ func (f *Firewall) AddTproxyRoute(fwmark, routeTable string) error {
 		return fmt.Errorf("cmd.Run: %w", err)
 	}
 
+	cmd = exec.Command("ip", "-6", "rule", "add", "fwmark", fwmark, "table", routeTable)
+	if err := cmd.Run(); err != nil {
+		slog.Info("ip -6 rule add", slog.String("error", err.Error()))
+	}
+
+	cmd = exec.Command("ip", "-6", "route", "add", "local", "::/0", "dev", "lo", "table", routeTable)
+	if err := cmd.Run(); err != nil {
+		slog.Info("ip -6 route add", slog.String("error", err.Error()))
+	}
+
 	return nil
 }
 
@@ -163,6 +174,12 @@ func (f *Firewall) DeleteTproxyRoute(fwmark, routeTable string) error {
 	_ = cmd.Run()
 
 	cmd = exec.Command("ip", "route", "flush", "table", routeTable)
+	_ = cmd.Run()
+
+	cmd = exec.Command("ip", "-6", "rule", "del", "fwmark", fwmark, "table", routeTable)
+	_ = cmd.Run()
+
+	cmd = exec.Command("ip", "-6", "route", "flush", "table", routeTable)
 	_ = cmd.Run()
 
 	return nil
@@ -178,7 +195,7 @@ func detectFirewallBackend(cfg *config.Config) string {
 	nftTproxyAvailable := isOpkgPackageInstalled("kmod-nft-tproxy") && nftAvailable
 	nftNfqueueAvailable := isOpkgPackageInstalled("kmod-nft-queue") && nftAvailable
 	tproxyNeeded := cfg.ServerMode == config.ServerModeTProxy
-	nfqueueNeeded := cfg.DelTCPTimestamp || cfg.SetIPID || cfg.ServerMode == config.ServerModeNFQueue
+	nfqueueNeeded := cfg.TCPInitialWindow || cfg.TCPTimeStamp || cfg.IPID || cfg.ServerMode == config.ServerModeNFQueue || cfg.Desync.Reorder || cfg.Desync.Inject
 
 	selectNFT := func() bool {
 		if !nftAvailable {
@@ -364,13 +381,31 @@ func initLanCidrs() {
 		}
 	}
 
-	LAN_CIDRS = updatedCIDRs
-
+	// Add local CIDRs if not already covered by existing CIDRs
 	localCIDRs, err := getLocalIPv4CIDRs()
-	if err != nil {
-		return
+	if err == nil {
+		for _, localCIDR := range localCIDRs {
+			localIP, _, err := net.ParseCIDR(localCIDR)
+			if err != nil {
+				continue
+			}
+			covered := false
+			for i, lanNet := range lanRanges {
+				if _, ok := remove[i]; ok {
+					continue
+				}
+				if lanNet.Contains(localIP) {
+					covered = true
+					break
+				}
+			}
+			if !covered {
+				updatedCIDRs = append(updatedCIDRs, localCIDR)
+			}
+		}
 	}
-	LAN_CIDRS = append(LAN_CIDRS, localCIDRs...)
+
+	LAN_CIDRS = updatedCIDRs
 }
 
 func GetLanDevice() (string, error) {

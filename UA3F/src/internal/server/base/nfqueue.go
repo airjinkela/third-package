@@ -13,9 +13,10 @@ import (
 
 	nfq "github.com/florianl/go-nfqueue/v2"
 	"github.com/mdlayher/netlink"
+	"github.com/sunbk201/ua3f/internal/common"
 )
 
-type NfqHandler func(a *Packet)
+type NfqHandler func(a *common.Packet)
 
 type NfqueueServer struct {
 	QueueNum      uint16
@@ -143,8 +144,6 @@ func (s *NfqueueServer) Close() {
 // worker processes packets from its assigned channel
 func (s *NfqueueServer) worker(workerID int, aChan <-chan *nfq.Attribute) {
 	defer s.wg.Done()
-	defer slog.Info("Nfqueue worker stopped", slog.Int("workerID", workerID))
-	slog.Info("Nfqueue worker started", slog.Int("workerID", workerID))
 
 	for a := range aChan {
 		if ok := attributeSanityCheck(a); !ok {
@@ -154,7 +153,7 @@ func (s *NfqueueServer) worker(workerID int, aChan <-chan *nfq.Attribute) {
 			slog.Warn("Invalid nfq.Attribute received", slog.Int("workerID", workerID))
 			return
 		}
-		packet, err := NewPacket(a)
+		packet, err := common.NewPacket(a)
 		if err != nil {
 			slog.Error("NewPacket", slog.Int("workerID", workerID), slog.Any("error", err))
 			if a.PacketID != nil {

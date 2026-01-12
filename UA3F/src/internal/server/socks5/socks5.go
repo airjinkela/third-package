@@ -13,9 +13,11 @@ import (
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/luyuhuang/subsocks/socks"
+	"github.com/sunbk201/ua3f/internal/common"
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/rewrite"
 	"github.com/sunbk201/ua3f/internal/server/base"
+	"github.com/sunbk201/ua3f/internal/sniff"
 	"github.com/sunbk201/ua3f/internal/statistics"
 )
 
@@ -25,7 +27,7 @@ type Server struct {
 	so_mark  int
 }
 
-func New(cfg *config.Config, rw *rewrite.Rewriter, rc *statistics.Recorder) *Server {
+func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Server {
 	return &Server{
 		Server: base.Server{
 			Cfg:      cfg,
@@ -50,7 +52,8 @@ func (s *Server) Close() (err error) {
 }
 
 func (s *Server) Start() (err error) {
-	if s.listener, err = net.Listen("tcp", s.Cfg.ListenAddr); err != nil {
+	listenAddr := fmt.Sprintf("%s:%d", s.Cfg.BindAddress, s.Cfg.Port)
+	if s.listener, err = net.Listen("tcp", listenAddr); err != nil {
 		return fmt.Errorf("net.Listen: %w", err)
 	}
 
@@ -157,11 +160,12 @@ func (s *Server) handleConnect(src net.Conn, req *socks.Request) error {
 		return fmt.Errorf("socks.NewReply.Write: %w", err)
 	}
 
-	s.ServeConnLink(&base.ConnLink{
-		LConn: src,
-		RConn: dest,
-		LAddr: srcAddr,
-		RAddr: destAddr,
+	s.ServeConnLink(&common.ConnLink{
+		LConn:    src,
+		RConn:    dest,
+		LAddr:    srcAddr,
+		RAddr:    destAddr,
+		Protocol: sniff.TCP,
 	})
 
 	return nil
@@ -200,11 +204,12 @@ func (s *Server) handleBind(conn net.Conn) error {
 		return fmt.Errorf("socks.NewReply.Write: %w", err)
 	}
 
-	s.ServeConnLink(&base.ConnLink{
-		LConn: conn,
-		RConn: newConn,
-		LAddr: srcAddr,
-		RAddr: newConn.RemoteAddr().String(),
+	s.ServeConnLink(&common.ConnLink{
+		LConn:    conn,
+		RConn:    newConn,
+		LAddr:    srcAddr,
+		RAddr:    newConn.RemoteAddr().String(),
+		Protocol: sniff.TCP,
 	})
 	return nil
 }

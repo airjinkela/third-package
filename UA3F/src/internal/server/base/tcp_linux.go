@@ -3,15 +3,19 @@
 package base
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
 const SO_MARK = 0xc9
+const SO_INJECT_MARK = 0xc91
 
 // Connect dials the target address with SO_MARK set and returns the connection.
 func Connect(addr string, mark int) (target net.Conn, err error) {
@@ -32,29 +36,48 @@ func Connect(addr string, mark int) (target net.Conn, err error) {
 
 // GetOriginalDstAddr retrieves the original destination address of the redirected connection.
 func GetOriginalDstAddr(conn net.Conn) (addr string, err error) {
-	fd, err := GetConnFD(conn)
-	if err != nil {
-		return "", fmt.Errorf("GetConnFD: %v", err)
-	}
-	raw, err := unix.GetsockoptIPv6Mreq(fd, unix.SOL_IP, unix.SO_ORIGINAL_DST)
-	if err != nil {
-		return "", fmt.Errorf("unix.GetsockoptIPv6Mreq: %v", err)
-	}
-
-	ip := net.IPv4(raw.Multiaddr[4], raw.Multiaddr[5], raw.Multiaddr[6], raw.Multiaddr[7])
-	port := uint16(raw.Multiaddr[2])<<8 + uint16(raw.Multiaddr[3])
-	return fmt.Sprintf("%s:%d", ip.String(), port), nil
-}
-
-func GetConnFD(conn net.Conn) (fd int, err error) {
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
-		return 0, errors.New("GetConnFD connection is not *net.TCPConn")
-	}
-	file, err := tcpConn.File()
-	if err != nil {
-		return 0, fmt.Errorf("tcpConn.File: %v", err)
+		return "", errors.New("GetConnFD connection is not *net.TCPConn")
 	}
 
-	return int(file.Fd()), nil
+	rawConn, err := tcpConn.SyscallConn()
+	if err != nil {
+		return "", fmt.Errorf("SyscallConn: %v", err)
+	}
+
+	var originalAddr string
+	err = rawConn.Control(func(fd uintptr) {
+		level := syscall.IPPROTO_IP
+		if conn.RemoteAddr().String()[0] == '[' {
+			level = syscall.IPPROTO_IPV6
+		}
+
+		addr, err := syscall.GetsockoptIPv6MTUInfo(int(fd), level, unix.SO_ORIGINAL_DST)
+		if err != nil {
+			slog.Warn("unix.GetsockoptIPv6MTUInfo", "error", err)
+			return
+		}
+
+		var ip net.IP
+		if level == syscall.IPPROTO_IPV6 {
+			ip = net.IP(addr.Addr.Addr[:])
+		} else {
+			ipBytes := (*[4]byte)(unsafe.Pointer(&addr.Addr.Flowinfo))[:4]
+			ip = net.IPv4(ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3])
+		}
+
+		port := binary.BigEndian.Uint16((*[2]byte)(unsafe.Pointer(&addr.Addr.Port))[:2])
+
+		if level == syscall.IPPROTO_IPV6 {
+			originalAddr = fmt.Sprintf("[%s]:%d", ip.String(), port)
+		} else {
+			originalAddr = fmt.Sprintf("%s:%d", ip.String(), port)
+		}
+	})
+	if err != nil {
+		return "", fmt.Errorf("rawConn.Control: %v", err)
+	}
+
+	return originalAddr, nil
 }

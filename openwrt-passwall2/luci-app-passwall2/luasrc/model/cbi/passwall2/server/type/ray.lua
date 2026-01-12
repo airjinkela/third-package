@@ -121,8 +121,7 @@ o = s:option(ListValue, _n("flow"), translate("flow"))
 o.default = ""
 o:value("", translate("Disable"))
 o:value("xtls-rprx-vision")
-o:depends({ [_n("protocol")] = "vless", [_n("tls")] = true, [_n("transport")] = "raw" })
-o:depends({ [_n("protocol")] = "vless", [_n("tls")] = true, [_n("transport")] = "xhttp" })
+o:depends({ [_n("protocol")] = "vless" })
 
 o = s:option(Flag, _n("tls"), translate("TLS"))
 o.default = 0
@@ -403,7 +402,8 @@ for k, e in ipairs(api.get_valid_nodes()) do
 	if e.node_type == "normal" and e.type == type_name then
 		nodes_table[#nodes_table + 1] = {
 			id = e[".name"],
-			remarks = e["remark"]
+			remarks = e["remark"],
+			group = e["group"]
 		}
 	end
 end
@@ -413,7 +413,12 @@ o:value("", translate("Close"))
 o:value("_socks", translate("Custom Socks"))
 o:value("_http", translate("Custom HTTP"))
 o:value("_iface", translate("Custom Interface"))
-for k, v in pairs(nodes_table) do o:value(v.id, v.remarks) end
+o.template = api.appname .. "/cbi/nodes_listvalue"
+o.group = {"","","",""}
+for k, v in pairs(nodes_table) do
+	o:value(v.id, v.remarks)
+	o.group[#o.group+1] = (v.group and v.group ~= "") and v.group or translate("default")
+end
 o:depends({ [_n("custom")] = false })
 
 o = s:option(Value, _n("outbound_node_address"), translate("Address (Support Domain Name)"))

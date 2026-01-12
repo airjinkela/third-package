@@ -8,43 +8,45 @@
 'require fchomo as hm';
 'require tools.widgets as widgets';
 
-function parseProxyGroupYaml(field, name, cfg) {
-	if (!cfg.type)
-		return null;
+const parseProxyGroupYaml = hm.parseYaml.extend({
+	key_mapping(cfg) {
+		if (!cfg.type)
+			return null;
 
-	// key mapping
-	let config = hm.removeBlankAttrs({
-		id: cfg.hm_id,
-		label: cfg.hm_label,
-		type: cfg.type,
-		groups: cfg.proxies ? cfg.proxies.map((grop) => hm.preset_outbound.full.map(([key, label]) => key).includes(grop) ? grop : this.calcID(hm.glossary["proxy_group"].field, grop)) : null, // array
-		use: cfg.use ? cfg.use.map((prov) => this.calcID(hm.glossary["provider"].field, prov)) : null, // array
-		include_all: hm.bool2str(cfg["include-all"]), // bool
-		include_all_proxies: hm.bool2str(cfg["include-all-proxies"]), // bool
-		include_all_providers: hm.bool2str(cfg["include-all-providers"]), // bool
-		// Url-test fields
-		tolerance: cfg.tolerance,
-		// Load-balance fields
-		strategy: cfg.strategy,
-		// Override fields
-		disable_udp: hm.bool2str(cfg["disable-udp"]), // bool
-		// Health fields
-		url: cfg.url,
-		interval: cfg.interval,
-		timeout: cfg.timeout,
-		lazy: hm.bool2str(cfg.lazy), // bool
-		expected_status: cfg["expected-status"],
-		max_failed_times: cfg["max-failed-times"],
-		// General fields
-		filter: [cfg.filter], // array.string: string
-		exclude_filter: [cfg["exclude-filter"]], // array.string: string
-		exclude_type: [cfg["exclude-type"]], // array.string: string
-		hidden: hm.bool2str(cfg.hidden), // bool
-		icon: cfg.icon
-	});
+		// key mapping // 2025/02/13
+		let config = hm.removeBlankAttrs({
+			id: this.id,
+			label: this.label,
+			type: cfg.type,
+			groups: cfg.proxies ? cfg.proxies.map((grop) => hm.preset_outbound.full.map(([key, label]) => key).includes(grop) ? grop : this.calcID(hm.glossary["proxy_group"].field, grop)) : null, // array
+			use: cfg.use ? cfg.use.map((prov) => this.calcID(hm.glossary["provider"].field, prov)) : null, // array
+			include_all: this.bool2str(cfg["include-all"]), // bool
+			include_all_proxies: this.bool2str(cfg["include-all-proxies"]), // bool
+			include_all_providers: this.bool2str(cfg["include-all-providers"]), // bool
+			// Url-test fields
+			tolerance: cfg.tolerance,
+			// Load-balance fields
+			strategy: cfg.strategy,
+			// Override fields
+			disable_udp: this.bool2str(cfg["disable-udp"]), // bool
+			// Health fields
+			url: cfg.url,
+			interval: cfg.interval,
+			timeout: cfg.timeout,
+			lazy: this.bool2str(cfg.lazy), // bool
+			expected_status: cfg["expected-status"],
+			max_failed_times: cfg["max-failed-times"],
+			// General fields
+			filter: [cfg.filter], // array.string: string
+			exclude_filter: [cfg["exclude-filter"]], // array.string: string
+			exclude_type: [cfg["exclude-type"]], // array.string: string
+			hidden: this.bool2str(cfg.hidden), // bool
+			icon: cfg.icon
+		});
 
-	return config;
-}
+		return config;
+	}
+});
 
 function loadDNSServerLabel(section_id) {
 	delete this.keylist;
@@ -221,161 +223,209 @@ class RulesEntry {
 	}
 }
 
-function parseDNSYaml(field, name, cfg) {
-	let addr = new DNSAddress(cfg);
+const parseDNSYaml = hm.parseYaml.extend({
+	key_mapping(cfg) {
+		let addr = new DNSAddress(cfg);
 
-	if (!addr.toString())
-		return null;
-
-	let detour = addr.parseParam('detour');
-	if (detour)
-		addr.setParam('detour', hm.preset_outbound.full.map(([key, label]) => key).includes(detour) ? detour : this.calcID(hm.glossary["proxy_group"].field, detour));
-
-	// key mapping
-	let config = {
-		id: this.calcID(field, cfg),
-		label: '%s %s'.format(cfg, _('(Imported)')),
-		address: addr.toString()
-	};
-
-	return config;
-}
-
-function parseDNSPolicyYaml(field, name, cfg) {
-	//console.info([name, cfg]);
-
-	let type = name.match(/^([^:]+):(.*)$/),
-		rules;
-	switch (type?.[1]) {
-		case 'geosite':
-			rules = type[2].split(',');
-			type = 'geosite';
-			break;
-		case 'rule-set':
-			rules = type[2].split(',').map((rule) => this.calcID(hm.glossary["ruleset"].field, rule));
-			type = 'rule_set';
-			break;
-		default:
-			rules = name.split(',');
-			type = 'domain';
-			break;
-	}
-
-	// key mapping
-	let config = {
-		id: this.calcID(field, name),
-		label: '%s %s'.format(name, _('(Imported)')),
-		type: type,
-		...Object.fromEntries([[type, rules]]),
-		server: (Array.isArray(cfg) ? cfg : [cfg]).map((dns) => this.calcID(hm.glossary["dns_server"].field, dns)),
-		//proxy: null // fchomo unique features
-	};
-
-	return config;
-}
-
-function parseRules(rule) {
-	// parse rules
-	// https://github.com/muink/mihomo/blob/8e6eb70e714d44f26ba407adbd7b255762f48b97/config/config.go#L1040-L1090
-	// https://github.com/muink/mihomo/blob/8e6eb70e714d44f26ba407adbd7b255762f48b97/rules/parser.go#L12
-	rule = rule.split(',');
-	let ruleName = rule[0].toUpperCase(),
-		logical_payload,
-		payload,
-		target,
-		params = [],
-		subrule;
-
-	let l = rule.length;
-
-	if (ruleName === 'SUB-RULE') {
-		subrule = rule.slice(1).join(',').match(/^\((.*)\)/); // SUB-RULE,(payload),subrule
-		if (subrule) {
-			[rule, subrule] = [subrule[1].split(',').concat('DIRECT'), rule.pop()];
-			ruleName = rule[0].toUpperCase();
-			l = rule.length;
-		} else
+		if (!addr.toString())
 			return null;
-	}
 
-	if (hm.rules_logical_type.map(o => o[0]).includes(ruleName)) {
-		target = rule.pop();
-		logical_payload = rule.slice(1).join(',').match(/^\(\((.*)\)\)$/); // LOGIC_TYPE,((payload1),(payload2))
-		if (logical_payload)
-			logical_payload = logical_payload[1].split('),(');
-		else
-			return null;
-	} else if (hm.rules_type.map(o => o[0]).includes(ruleName)) {
-		if (l < 2) return null; // error: format invalid
-		else if (ruleName === 'MATCH') l = 2;
-		else if (l >= 3) {
-			l = 3;
-			payload = rule[1];
+		let detour = addr.parseParam('detour');
+		if (detour)
+			addr.setParam('detour', hm.preset_outbound.full.map(([key, label]) => key).includes(detour) ? detour : this.calcID(hm.glossary["proxy_group"].field, detour));
+
+		// key mapping // 2025/12/01
+		let config = {
+			id: this.id,
+			label: this.label,
+			address: addr.toString()
+		};
+
+		return config;
+	}
+});
+
+const parseDNSPolicyYaml = hm.parseYaml.extend({
+	key_mapping(cfg) {
+		//console.info([this.name, cfg]);
+
+		let type = this.name.match(/^([^:]+):(.*)$/),
+			rules;
+		switch (type?.[1]) {
+			case 'geosite':
+				rules = type[2].split(',');
+				type = 'geosite';
+				break;
+			case 'rule-set':
+				rules = type[2].split(',').map((rule) => this.calcID(hm.glossary["ruleset"].field, rule));
+				type = 'rule_set';
+				break;
+			default:
+				rules = this.name.split(',');
+				type = 'domain';
+				break;
 		}
-		target = rule[l-1];
-		params = rule.slice(l);
-	} else
-		return null;
 
-	// make entry
-	let entry = new RulesEntry();
-	entry.type = ruleName;
-	// parse payload
-	if (logical_payload)
-		for (let i=0; i < logical_payload.length; i++) {
-			let type, factor, deny;
+		// key mapping // 2025/12/01
+		let config = {
+			id: this.id,
+			label: this.label,
+			type: type,
+			...Object.fromEntries([[type, rules]]),
+			server: (Array.isArray(cfg) ? cfg : [cfg]).map((dns) => this.calcID(hm.glossary["dns_server"].field, dns)),
+			//proxy: null // fchomo unique features
+		};
 
-			// deny
-			deny = logical_payload[i].match(/^NOT,\(\((.*)\)\)$/);
-			if (deny)
-				[type, factor] = deny[1].split(',');
+		return config;
+	}
+});
+
+const parseRulesYaml = hm.parseYaml.extend({
+	key_mapping(cfg) {
+		let entry = this.parseRules(cfg); // 2025/07/11
+
+		if (!entry)
+			return null;
+
+		// key mapping // 2025/07/11
+		let config = {
+			id: this.id,
+			label: '%s %s'.format(this.id.slice(0,7), _('(Imported)')),
+			entry: entry
+		};
+
+		return config;
+	},
+
+	ParseRulePayload(ruleRaw, needTarget) {
+		// parse rules
+		// https://github.com/muink/mihomo/blob/300eb8b12a75504c4bd4a6037d2f6503fd3b347f/rules/common/base.go#L48-L76
+		let item = ruleRaw.split(",");
+		let tp = item[0].toUpperCase(),
+			payload,
+			target,
+			params = [];
+
+		if (item.length > 1) {
+			switch (tp) {
+				case "MATCH":
+					// MATCH doesn't contain payload and params
+					target = item[1];
+					break;
+				case "NOT":
+				case "OR":
+				case "AND":
+				case "SUB-RULE":
+				case "DOMAIN-REGEX":
+				case "PROCESS-NAME-REGEX":
+				case "PROCESS-PATH-REGEX":
+					// some type of rules that has comma in payload and don't need params
+					if (needTarget)
+						target = item.pop(); // don't have params so target must at the end of slices
+					payload = item.slice(1).join(",");
+					break;
+				default:
+					payload = item[1];
+					if (item.length > 2) {
+						if (needTarget) {
+							target = item[2];
+							if (item.length > 3)
+								params = item.slice(3);
+						} else
+							params = item.slice(2);
+					}
+			}
+		}
+
+		return [ tp, payload, target, params ];
+	},
+
+	ParseRule(tp, payload, target, params) {
+		// parse rules
+		// https://github.com/muink/mihomo/blob/487de9b5482d838acc33b067045a0dc293e35d40/rules/parser.go#L12
+
+		// nested ParseRule
+		let logical_payload, subrule;
+
+		if (tp === 'SUB-RULE') {
+			payload = payload.match(/^\((.*)\)$/); // SUB-RULE,(payload),subrule
+			if (payload)
+				[tp, payload, target, params, subrule] = [...this.ParseRulePayload(payload[1], false), target];
 			else
-				[type, factor] = logical_payload[i].split(',');
-
-			if (type === 'RULE-SET')
-				factor = this.calcID(hm.glossary["ruleset"].field, factor);
-
-			entry.setPayload(i, {type: type.toUpperCase(), factor: factor, deny: deny ? true : null});
+				return null;
 		}
-	else if (payload)
-		if (ruleName === 'RULE-SET')
-			entry.setPayload(0, {factor: this.calcID(hm.glossary["ruleset"].field, payload)});
+
+		if (hm.rules_logical_type.map(e => e[0] || e).includes(tp)) {
+			logical_payload = payload.match(/^\(\((.*)\)\)$/); // LOGIC_TYPE,((payload1),(payload2),(payload3)),DIRECT
+			if (logical_payload)
+				logical_payload = logical_payload[1].split('),(');
+			else
+				return null;
+		}
+
+		// make entry
+		let entry = new RulesEntry();
+		entry.type = tp;
+
+		// parse payload
+		if (logical_payload)
+			for (let i=0; i < logical_payload.length; i++) {
+				let type, factor, deny;
+
+				// deny
+				deny = logical_payload[i].match(/^NOT,\(\((.*)\)\)$/);
+				if (deny)
+					[type, factor] = deny[1].split(',');
+				else
+					[type, factor] = logical_payload[i].split(',');
+
+				if (type === 'RULE-SET')
+					factor = this.calcID(hm.glossary["ruleset"].field, factor);
+
+				entry.setPayload(i, {type: type.toUpperCase(), factor: factor, deny: deny ? true : null});
+			}
+		else if (payload)
+			if (tp === 'RULE-SET')
+				entry.setPayload(0, {factor: this.calcID(hm.glossary["ruleset"].field, payload)});
+			else
+				entry.setPayload(0, {factor: payload});
+
+		// parse target/subrule
+		if (subrule)
+			entry.subrule = subrule;
 		else
-			entry.setPayload(0, {factor: payload});
-	params.forEach((param) => entry.setParam(param, true));
-	if (subrule)
-		entry.subrule = subrule;
-	else
-		entry.detour = hm.preset_outbound.full.map(([key, label]) => key).includes(target) ? target : this.calcID(hm.glossary["proxy_group"].field, target);
+			entry.detour = hm.preset_outbound.full.map(([key, label]) => key).includes(target) ? target : this.calcID(hm.glossary["proxy_group"].field, target);
 
-	return entry.toString('json');
-}
-function parseRulesYaml(field, name, cfg) {
-	let id = this.calcID(field, cfg);
-	let entry = parseRules.call(this, cfg);
+		// parse params
+		params.forEach((param) => entry.setParam(param, true));
 
-	if (!entry)
-		return null;
+		return entry;
+	},
 
-	// key mapping
-	let config = {
-		id: id,
-		label: '%s %s'.format(id.slice(0,7), _('(Imported)')),
-		entry: entry
-	};
+	parseRules(line) {
+		// parse rules
+		// https://github.com/muink/mihomo/blob/300eb8b12a75504c4bd4a6037d2f6503fd3b347f/config/config.go#L1038-L1062
+		let [tp, payload, target, params] = this.ParseRulePayload(line, true);
+		if (!target)
+			return null; // error: format invalid
 
-	return config;
-}
-function parseSubrulesYaml(field, name, cfg) {
-	cfg = cfg.match(/^([^:]+):(.+)$/);
+		let parsed = this.ParseRule(tp, payload, target, params);
 
-	if (!cfg)
-		return null;
+		return parsed.toString('json');
+	}
+});
+const parseSubrulesYaml = parseRulesYaml.extend({
+	key_mapping(cfg) {
+		cfg = cfg.match(/^([^:]+):(.+)$/);
 
-	let config = parseRulesYaml.call(this, field, name, cfg[2]);
+		if (!cfg)
+			return null;
 
-	return config ? Object.assign(config, {group: cfg[1]}) : null;
-}
+		let config = new parseRulesYaml(this.field, this.name, cfg[2]).output(); // 2024/08/05
+
+		return config ? Object.assign(config, {group: cfg[1]}) : null;
+	}
+});
 
 function boolToFlag(boolean) {
 	if (typeof(boolean) !== 'boolean')
@@ -501,7 +551,7 @@ function renderPayload(s, total, uciconfig) {
 			o.depends({type: /\b(CIDR|CIDR6)\b/});
 			o.depends({type: /\bIP-SUFFIX\b/});
 		}
-		o.depends(Object.fromEntries([[prefix + 'type', /\b(CIDR|CIDR6)\b/]]));
+		o.depends(Object.fromEntries([[prefix + 'type', /\bCIDR6?\b/]]));
 		o.depends(Object.fromEntries([[prefix + 'type', /\bIP-SUFFIX\b/]]));
 		initPayload(o, n, 'factor', uciconfig);
 
@@ -594,7 +644,7 @@ function renderPayload(s, total, uciconfig) {
 			return true;
 		}
 
-		o = s.option(!hm.pr7558_merged ? hm.DynamicList : form.DynamicList, prefix + 'fused', _('Factor') + ' ++', // @pr7558_merged
+		o = s.option(hm.less_25_12 ? hm.DynamicList : form.DynamicList, prefix + 'fused', _('Factor') + ' ++', // @less_25_12
 			_('Content will not be verified, Please make sure you enter it correctly.'));
 		extenbox[n].forEach((type) => {
 			o.depends(Object.fromEntries([['type', type], [prefix + 'type', /.+/]]));
@@ -672,9 +722,7 @@ function renderRules(s, uciconfig) {
 	}
 	o.validate = function(section_id, value) {
 		// params only available for types other than
-		// https://github.com/muink/mihomo/blob/8e6eb70e714d44f26ba407adbd7b255762f48b97/config/config.go#L1050
-		// https://github.com/muink/mihomo/blob/8e6eb70e714d44f26ba407adbd7b255762f48b97/rules/parser.go#L12
-		if (['GEOIP', 'IP-ASN', 'IP-CIDR', 'IP-CIDR6', 'IP-SUFFIX', 'RULE-SET'].includes(value)) {
+		if (hm.rules_type_allowparms.includes(value)) {
 			['no-resolve', 'src'].forEach((opt) => {
 				let UIEl = this.section.getUIElement(section_id, opt);
 				UIEl.node.querySelector('input').removeAttribute('disabled');
@@ -853,7 +901,7 @@ return view.extend({
 							'  url: "https://cp.cloudflare.com/generate_204"\n' +
 							'  interval: 300\n' +
 							'  lazy: false\n' +
-							'  strategy: consistent-hashin\n' +
+							'  strategy: consistent-hashing\n' +
 							'- name: AllProxy\n' +
 							'  type: select\n' +
 							'  disable-udp: true\n' +
@@ -867,11 +915,7 @@ return view.extend({
 							'  exclude-filter: "美|日"\n' +
 							'  exclude-type: "Shadowsocks|Http"\n' +
 							'  ...'
-			o.parseYaml = function(field, name, cfg) {
-				let config = hm.HandleImport.prototype.parseYaml.call(this, field, name, cfg);
-
-				return config ? parseProxyGroupYaml.call(this, field, name, config) : null;
-			};
+			o.parseYaml = parseProxyGroupYaml;
 
 			return o.render();
 		}
@@ -1084,16 +1128,27 @@ return view.extend({
 					.format(field));
 			o.placeholder = 'rules:\n' +
 							'- DOMAIN,ad.com,REJECT\n' +
+							'- DOMAIN-WILDCARD,*.google.com,auto\n' +
 							'- DOMAIN-REGEX,^abc.*com,auto\n' +
-							'- GEOSITE,youtube,PROXY\n' +
+							'- GEOSITE,youtube,GLOBAL\n' +
 							'- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve\n' +
+							'- IP-CIDR6,2620:0:2d0:200::7/32,auto\n' +
 							'- IP-SUFFIX,8.8.8.8/24,auto\n' +
 							'- IP-ASN,13335,DIRECT\n' +
 							'- GEOIP,CN,DIRECT\n' +
+							'- SRC-GEOIP,cn,DIRECT\n' +
+							'- SRC-IP-ASN,9808,DIRECT\n' +
+							'- SRC-IP-CIDR,192.168.1.201/32,DIRECT\n' +
+							'- SRC-IP-SUFFIX,192.168.1.201/8,DIRECT\n' +
+							'- DST-PORT,80,DIRECT\n' +
+							'- SRC-PORT,7777,DIRECT\n' +
 							'- PROCESS-PATH,/usr/bin/wget,auto\n' +
 							'- PROCESS-PATH-REGEX,.*bin/wget,auto\n' +
+							'- PROCESS-PATH-REGEX,(?i).*Application\\\\chrome.*,GLOBAL\n' +
 							'- PROCESS-NAME,curl,auto\n' +
 							'- PROCESS-NAME-REGEX,curl$,auto\n' +
+							'- PROCESS-NAME-REGEX,(?i)Telegram,GLOBAL\n' +
+							'- PROCESS-NAME-REGEX,.*telegram.*,GLOBAL\n' +
 							'- UID,1001,DIRECT\n' +
 							'- NETWORK,udp,DIRECT\n' +
 							'- DSCP,4,DIRECT\n' +
@@ -1106,11 +1161,7 @@ return view.extend({
 							'- AND,((GEOIP,cn),(DSCP,12),(NETWORK,udp),(NOT,((IP-ASN,12345))),(DSCP,14),(NOT,((NETWORK,udp)))),DIRECT\n' +
 							'- MATCH,GLOBAL\n' +
 							'  ...'
-			o.parseYaml = function(field, name, cfg) {
-				let config = hm.HandleImport.prototype.parseYaml.call(this, field, name, cfg);
-
-				return config ? parseRulesYaml.call(this, field, name, config) : null;
-			};
+			o.parseYaml = parseRulesYaml;
 
 			return o.render();
 		}
@@ -1202,11 +1253,7 @@ return view.extend({
 							'    - DOMAIN,dns.alidns.com,REJECT\n' +
 							'  ...'
 			o.appendcommand = ' | with_entries(.key as $k | .value |= map("\\($k):" + .)) | [.[][]]'
-			o.parseYaml = function(field, name, cfg) {
-				let config = hm.HandleImport.prototype.parseYaml.call(this, field, name, cfg);
-
-				return config ? parseSubrulesYaml.call(this, field, name, config) : null;
-			};
+			o.parseYaml = parseSubrulesYaml;
 
 			return o.render();
 		}
@@ -1343,11 +1390,7 @@ return view.extend({
 							'    - https://doh.pub/dns-query\n' +
 							'  ...'
 			o.overridecommand = '.dns | pick(["default-nameserver", "proxy-server-nameserver", "nameserver", "fallback", "nameserver-policy"]) | with(.["nameserver-policy"]; . = [.[]] | flatten) | [.[][]] | unique'
-			o.parseYaml = function(field, name, cfg) {
-				let config = hm.HandleImport.prototype.parseYaml.call(this, field, name, cfg);
-
-				return config ? parseDNSYaml.call(this, field, name, config) : null;
-			};
+			o.parseYaml = parseDNSYaml;
 
 			return o.render();
 		}
@@ -1565,11 +1608,7 @@ return view.extend({
 							'    - https://doh.pub/dns-query#DIRECT\n' +
 							'  "rule-set:google": tls://8.8.4.4:853\n' +
 							'  ...'
-			o.parseYaml = function(field, name, cfg) {
-				let config = hm.HandleImport.prototype.parseYaml.call(this, field, name, cfg);
-
-				return config ? parseDNSPolicyYaml.call(this, field, name, config) : null;
-			};
+			o.parseYaml = parseDNSPolicyYaml;
 
 			return o.render();
 		}
