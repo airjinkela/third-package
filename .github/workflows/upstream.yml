@@ -36,7 +36,7 @@ jobs:
         shopt -s extglob
         set +e
         git rm -r --cache * >/dev/null 2>&1 &
-        rm -rf `find ./* -maxdepth 0 -type d ! -name ".github"` >/dev/null 2>&1
+        rm -rf `find ./* -maxdepth 0 -type d ! -name ".github" ! -name "openwrt-passwall2"` >/dev/null 2>&1
 
         function git_clone() {
           git clone --depth 1 $1 $2
@@ -82,7 +82,7 @@ jobs:
         git_clone https://github.com/xptsp/luci-app-adguardhome
         git_clone https://github.com/tianiue/luci-app-bypass
         git_clone https://github.com/nikkinikki-org/OpenWrt-nikki
-        git_clone https://github.com/xiaorouji/openwrt-passwall2
+        git_clone https://github.com/Openwrt-Passwall/openwrt-passwall2
         git_clone https://github.com/frainzy1477/pdnsd
         git_clone https://github.com/CHN-beta/rkp-ipid
         git_clone https://github.com/SunBK201/UA3F
