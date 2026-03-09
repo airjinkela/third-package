@@ -89,7 +89,7 @@ jobs:
         git_clone https://github.com/rockjake/luci-app-fancontrol
         git_clone https://github.com/kiddin9/openwrt-tailscale && mvdir openwrt-tailscale
         git_clone https://github.com/FUjr/modem_feeds
-        git_clone https://github.com/sirpdboy/luci-app-lucky
+        git_clone https://github.com/gdy666/luci-app-lucky
         git_clone https://github.com/lvqier/luci-app-dnsmasq-ipset
         git_clone https://github.com/linkease/istore && mvdir istore/luci
         git_clone https://github.com/linkease/nas-packages-luci && mvdir nas-packages-luci/luci && rm -rf nas-packages-luci

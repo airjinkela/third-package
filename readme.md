@@ -17,6 +17,7 @@
 * https://github.com/linkease/nas-packages-luci
 * https://github.com/linkease/nas-packages
 * https://github.com/lvqier/luci-app-dnsmasq-ipset
+* https://github.com/gdy666/luci-app-lucky
 * https://github.com/RuijieNetworksCommunity/immortalwrt-mt798x-luci themes/luci-theme-design
 * https://github.com/fw876/helloworld shadowsocksr-libev shadowsocks-libev luci-app-ssr-plus dns2socks-rust
 * https://github.com/linkease/istore-packages luci-app-uugamebooster qBittorrent-EE luci-app-qbittorrent-ee
