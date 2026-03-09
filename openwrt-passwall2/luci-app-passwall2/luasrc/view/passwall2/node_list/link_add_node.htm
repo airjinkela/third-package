@@ -39,11 +39,22 @@ local api = require "luci.passwall2.api"
 		}
 		sendNextChunk();
 	}
-	
+
+	function getBg(el) {
+		if (!el) return null;
+		const style = getComputedStyle(el);
+		const bgImage = style.backgroundImage;
+		const bgColor = style.backgroundColor;
+		return (bgImage !== 'none' || !/rgba\([^,]+,[^,]+,[^,]+,\s*0\)/.test(bgColor) && bgColor !== 'transparent')
+			? style.background
+			: null;
+	};
+
 	function open_add_link_div() {
 		document.body.classList.add('modal-open');
 		document.getElementById('modal-mask').style.display = 'block';
 		const addLinkDiv = document.getElementById("add_link_div");
+		addLinkDiv.style.background = getBg(document.querySelector('.cbi-section')) || getBg(document.body) || '';
 		addLinkDiv.style.display = "block";
 		if (!addLinkDiv._dropdown_inited) {
 			addLinkDiv._dropdown_inited = true;
@@ -105,6 +116,7 @@ local api = require "luci.passwall2.api"
 				document.body.classList.add('modal-open');
 				document.getElementById('modal-mask').style.display = 'block';
 				const reassignGroupDiv = document.getElementById("reassign_group_div");
+				reassignGroupDiv.style.background = getBg(document.querySelector('.cbi-section')) || getBg(document.body) || '';
 				reassignGroupDiv.style.display = "block";
 				if (!reassignGroupDiv._dropdown_inited) {
 					reassignGroupDiv._dropdown_inited = true;
@@ -150,11 +162,6 @@ local api = require "luci.passwall2.api"
 			}
 		}
 	}
-
-	function add_new_node() {
-		window.location.href = '<%=api.url("add_node")%>?redirect=1';
-	}
-	
 
 	// Custom group dropdown list events
 	function dropdown_list_fun(div_id) {
@@ -317,7 +324,7 @@ local api = require "luci.passwall2.api"
 
 <div class="pw-toolbar">
 	<div class="pw-toolbar-field">
-		<input class="btn cbi-button cbi-button-add" type="button" onclick="add_new_node()" value="<%:Add%>" />
+		<input class="btn cbi-button cbi-button-add" type="button" onclick="to_add_node()" value="<%:Add%>" />
 		<input class="btn cbi-button cbi-button-add" type="button" onclick="open_add_link_div()" value="<%:Add the node via the link%>" />
 		<input class="btn cbi-button cbi-button-remove" type="button" onclick="clear_all_nodes()" value="<%:Clear all nodes%>" />
 		<input class="btn cbi-button cbi-button-remove" type="button" onclick="delete_select_nodes()" value="<%:Delete select nodes%>" />
@@ -397,6 +404,11 @@ local api = require "luci.passwall2.api"
 		border-radius: 5px;
 	}
 
+	#add_link_div h3,
+	#reassign_group_div h3 {
+		background: inherit;
+	}
+
 	#nodes_link_text {
 		color: red;
 		font-size: 14px;
@@ -445,8 +457,7 @@ local api = require "luci.passwall2.api"
 		background: #fff;
 		cursor: pointer;
 		box-sizing: border-box;
-		display: flex;
-		align-items: center;
+		display: block;
 	}
 
 	.selected-display {
@@ -457,23 +468,21 @@ local api = require "luci.passwall2.api"
 		width: 100%;
 		height: 100%;
 		box-sizing: border-box;
+		font-size: 12px;
+		color: #666;
 	}
 
 	.selected-display:hover {
 		background-color: #f7f7f7;
 	}
 
-	.selected-display {
-		font-size: 12px;
-		color: #666;
-	}
-
 	.dropdown-list {
 		position: absolute;
-		top: 100%;
-		left: 0;
-		width: 180px;
+		top: calc(100% + 2px);
+		left: -1px;
+		width: calc(100% + 2px);
 		border: 1px solid #d9d9d9;
+		border-radius: 2px;
 		border-top: none;
 		box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 		background: #fff;
@@ -485,6 +494,7 @@ local api = require "luci.passwall2.api"
 		overflow-x: hidden;
 		z-index: 100;
 		box-sizing: border-box;
+		color: #666;
 	}
 
 	.dropdown-item {

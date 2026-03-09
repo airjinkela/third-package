@@ -2,17 +2,21 @@ package http
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/sunbk201/ua3f/internal/bpf"
 	"github.com/sunbk201/ua3f/internal/common"
 	"github.com/sunbk201/ua3f/internal/config"
 	"github.com/sunbk201/ua3f/internal/log"
+	"github.com/sunbk201/ua3f/internal/mitm"
 	"github.com/sunbk201/ua3f/internal/rewrite"
 	"github.com/sunbk201/ua3f/internal/rule/action"
 	"github.com/sunbk201/ua3f/internal/server/base"
@@ -22,10 +26,11 @@ import (
 
 type Server struct {
 	base.Server
+	server  *http.Server
 	so_mark int
 }
 
-func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Server {
+func New(cfg *config.Config, rw common.Rewriter, rc *statistics.Recorder, middleMan *mitm.MiddleMan, bpf *bpf.BPF) *Server {
 	return &Server{
 		Server: base.Server{
 			Cfg:      cfg,
@@ -37,15 +42,21 @@ func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Serv
 					return bufio.NewReaderSize(nil, 16*1024)
 				},
 			},
+			MiddleMan: middleMan,
+			BPF:       bpf,
 		},
 		so_mark: base.SO_MARK,
 	}
 }
 
 func (s *Server) Start() (err error) {
-	s.Recorder.Start()
+	var listener net.Listener
+	listenAddr := fmt.Sprintf("%s:%d", s.Cfg.BindAddress, s.Cfg.Port)
+	if listener, err = net.Listen("tcp", listenAddr); err != nil {
+		return fmt.Errorf("lc.Listen: %w", err)
+	}
+
 	server := &http.Server{
-		Addr: fmt.Sprintf("%s:%d", s.Cfg.BindAddress, s.Cfg.Port),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.Method == http.MethodConnect {
 				s.handleTunneling(w, req)
@@ -54,16 +65,58 @@ func (s *Server) Start() (err error) {
 			}
 		}),
 	}
+	s.server = server
+
+	s.Recorder.Start()
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server.ListenAndServe", slog.Any("error", err))
+		if err := server.Serve(listener); err != nil {
+			if err == http.ErrServerClosed {
+				return
+			} else {
+				slog.Error("server.Serve", slog.Any("error", err))
+			}
 		}
 	}()
 	return nil
 }
 
 func (s *Server) Close() (err error) {
-	return nil
+	if s.server == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	s.BPF.Close()
+
+	return s.server.Shutdown(ctx)
+}
+
+func (s *Server) Restart(cfg *config.Config) (common.Server, error) {
+	newRewriter, err := rewrite.New(cfg, s.Recorder)
+	if err != nil {
+		slog.Error("rewrite.New", slog.Any("error", err))
+		return nil, err
+	}
+
+	newMiddleMan, err := mitm.NewMiddleMan(cfg)
+	if err != nil {
+		slog.Error("mitm.NewMiddleMan", slog.Any("error", err))
+		return nil, err
+	}
+
+	newServer := New(cfg, newRewriter, s.Recorder, newMiddleMan, s.BPF)
+
+	if err := s.Close(); err != nil {
+		slog.Error("old server shutdown error", slog.Any("error", err))
+	}
+
+	if err := newServer.Start(); err != nil {
+		return nil, err
+	}
+
+	return newServer, nil
 }
 
 func (s *Server) handleHTTP(w http.ResponseWriter, req *http.Request) {

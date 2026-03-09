@@ -1,6 +1,7 @@
 package header
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -13,8 +14,8 @@ type Replace struct {
 	recorder  *statistics.Recorder
 	header    string
 	value     string
-	contine   bool
 	direction common.Direction
+	contine   bool
 }
 
 func (r *Replace) Type() common.ActionType {
@@ -59,6 +60,16 @@ func (r *Replace) Execute(metadata *common.Metadata) (bool, error) {
 
 func (r *Replace) Direction() common.Direction {
 	return r.direction
+}
+
+func (r *Replace) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"type":      r.Type(),
+		"header":    r.header,
+		"value":     r.value,
+		"continue":  r.contine,
+		"direction": r.direction,
+	})
 }
 
 func (r *Replace) LogValue() slog.Value {

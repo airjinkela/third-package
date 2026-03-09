@@ -1,6 +1,7 @@
 package body
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -13,8 +14,8 @@ type ReplaceRegex struct {
 	recorder     *statistics.Recorder
 	replaceRegex *regexp2.Regexp
 	replaceValue string
-	contine      bool
 	direction    common.Direction
+	contine      bool
 }
 
 func (r *ReplaceRegex) Type() common.ActionType {
@@ -65,6 +66,20 @@ func (r *ReplaceRegex) Execute(metadata *common.Metadata) (bool, error) {
 
 func (r *ReplaceRegex) Direction() common.Direction {
 	return r.direction
+}
+
+func (r *ReplaceRegex) MarshalJSON() ([]byte, error) {
+	var regex string
+	if r.replaceRegex != nil {
+		regex = r.replaceRegex.String()
+	}
+	return json.Marshal(map[string]any{
+		"type":      r.Type(),
+		"regex":     regex,
+		"value":     r.replaceValue,
+		"continue":  r.contine,
+		"direction": r.direction,
+	})
 }
 
 func (r *ReplaceRegex) LogValue() slog.Value {

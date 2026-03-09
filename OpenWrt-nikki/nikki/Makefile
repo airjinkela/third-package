@@ -1,15 +1,15 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nikki
-PKG_VERSION:=2025.12.21
+PKG_VERSION:=2026.02.08
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/MetaCubeX/mihomo.git
-PKG_SOURCE_VERSION:=v1.19.18
-PKG_MIRROR_HASH:=4da31e2bc1607fadaea8bd4c83252acd7ba1070c64e4098e3020da63e3464e68
+PKG_SOURCE_VERSION:=v1.19.20
+PKG_MIRROR_HASH:=ab83118867b4325139864f5b57c4acef750631c5decfd8d3ba388d5d2afa5e23
 
 PKG_LICENSE:=GPL3.0+
 PKG_MAINTAINER:=Joseph Mory <morytyann@gmail.com>
@@ -32,8 +32,10 @@ define Package/nikki
   CATEGORY:=Network
   TITLE:=A rule based proxy in Go.
   URL:=https://wiki.metacubex.one
-  DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle +curl +yq firewall4 +ip-full +kmod-inet-diag +kmod-nft-socket +kmod-nft-tproxy +kmod-tun
+  DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle +curl +yq firewall4 +ip-full +kmod-inet-diag +kmod-nft-socket +kmod-nft-tproxy +kmod-tun +kmod-dummy
   PROVIDES:=mihomo
+  ALTERNATIVES:=\
+    300:/usr/bin/mihomo:/usr/libexec/nikki
 endef
 
 define Package/nikki/description
@@ -46,7 +48,10 @@ define Package/nikki/conffiles
 endef
 
 define Package/nikki/install
-	$(call GoPackage/Package/Install/Bin,$(1))
+	$(call GoPackage/Package/Install/Bin,$(PKG_INSTALL_DIR))
+
+	$(INSTALL_DIR) $(1)/usr/libexec/
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/mihomo $(1)/usr/libexec/nikki
 
 	$(INSTALL_DIR) $(1)/etc/nikki
 	$(INSTALL_DIR) $(1)/etc/nikki/ucode

@@ -80,17 +80,36 @@ class DNSAddress {
 		} else
 			this.rawparams = '';
 		this.params = new URLSearchParams(this.rawparams);
+		// disable-qtypes
+		// https://dns.google/dns-query#GLOBAL&disable-qtype-1=true&disable-qtype-28=true&disable-qtype-33=true&disable-qtype-65=true
+		let qtypes = [...this.params.keys()].filter(e => e.match(/^disable-qtype-\d+$/)).map(e => e.replace('disable-qtype-', ''))
+		if (!hm.isEmpty(qtypes))
+			this.params.set('disable-qtypes', qtypes);
 	}
 
 	parseParam(param) {
-		return this.params.has(param) ? decodeURI(this.params.get(param)) : null;
+		switch (param) {
+			case 'disable-qtypes': // https://github.com/miekg/dns/blob/master/types.go#L26
+				return this.params.has(param) ? this.params.get(param).split(',') : [];
+			default:
+				return this.params.has(param) ? decodeURI(this.params.get(param)) : null;
+		}
 	}
 
 	setParam(param, value) {
-		if (value) {
-			this.params.set(param, value);
-		} else
-			this.params.delete(param);
+		switch (param) {
+			case 'disable-qtypes':
+				if (!hm.isEmpty(value))
+					this.params.set(param, value);
+				else
+					this.params.delete(param);
+				break;
+			default:
+				if (value)
+					this.params.set(param, value);
+				else
+					this.params.delete(param);
+		}
 
 		return this
 	}
@@ -99,8 +118,11 @@ class DNSAddress {
 		return this.addr + (this.params.size === 0 ? '' : '#' +
 			['detour', 'h3', 'skip-cert-verify', 'ecs', 'ecs-override', 'disable-ipv4', 'disable-ipv6'].map((k) => {
 				return this.params.has(k) ? '%s=%s'.format(k, encodeURI(this.params.get(k))) : null;
-			}).filter(v => v).join('&')
-		);
+			}).filter(v => v).join('&') +
+			(function(k) {
+				return this.params.has(k) ? '&' + this.params.get(k).split(',').map(v => `disable-qtype-${v}=true`).join('&') : '';
+			}.bind(this, 'disable-qtypes')())
+		).replace('#&', '#');
 	}
 }
 
@@ -234,7 +256,7 @@ const parseDNSYaml = hm.parseYaml.extend({
 		if (detour)
 			addr.setParam('detour', hm.preset_outbound.full.map(([key, label]) => key).includes(detour) ? detour : this.calcID(hm.glossary["proxy_group"].field, detour));
 
-		// key mapping // 2025/12/01
+		// key mapping // 2026/01/17
 		let config = {
 			id: this.id,
 			label: this.label,
@@ -266,7 +288,7 @@ const parseDNSPolicyYaml = hm.parseYaml.extend({
 				break;
 		}
 
-		// key mapping // 2025/12/01
+		// key mapping // 2026/01/17
 		let config = {
 			id: this.id,
 			label: this.label,
@@ -282,12 +304,12 @@ const parseDNSPolicyYaml = hm.parseYaml.extend({
 
 const parseRulesYaml = hm.parseYaml.extend({
 	key_mapping(cfg) {
-		let entry = this.parseRules(cfg); // 2025/07/11
+		let entry = this.parseRules(cfg);
 
 		if (!entry)
 			return null;
 
-		// key mapping // 2025/07/11
+		// key mapping // 2026/01/18
 		let config = {
 			id: this.id,
 			label: '%s %s'.format(this.id.slice(0,7), _('(Imported)')),
@@ -571,7 +593,7 @@ function renderPayload(s, total, uciconfig) {
 		initPayload(o, n, 'factor', uciconfig);
 
 		o = s.option(form.Value, prefix + 'dscp', _('Factor') + ` ${n+1}`);
-		o.datatype = 'range(0, 63)';
+		o.datatype = 'and(uinteger, range(0, 63))';
 		if (n === 0)
 			o.depends('type', 'DSCP');
 		o.depends(prefix + 'type', 'DSCP');
@@ -812,6 +834,58 @@ function renderRules(s, uciconfig) {
 	o.write = function() {};
 	o.depends('SUB-RULE', '');
 	o.modalonly = true;
+}
+
+function renderPolicies(s, uciconfig) {
+	let o;
+
+	o = s.option(form.ListValue, 'type', _('Type'));
+	o.value('domain', _('Domain'));
+	o.value('geosite', _('Geosite'));
+	o.value('rule_set', _('Rule set'));
+	o.default = 'domain';
+
+	o = s.option(form.DynamicList, 'domain', _('Domain'),
+		_('Match domain. Support wildcards.'));
+	o.depends('type', 'domain');
+	o.modalonly = true;
+
+	o = s.option(form.DynamicList, 'geosite', _('Geosite'),
+		_('Match geosite.'));
+	o.depends('type', 'geosite');
+	o.modalonly = true;
+
+	o = s.option(form.MultiValue, 'rule_set', _('Rule set'),
+		_('Match rule set.'));
+	o.value('', _('-- Please choose --'));
+	o.load = L.bind(hm.loadRulesetLabel, o, [['', _('-- Please choose --')]], ['domain', 'classical']);
+	o.depends('type', 'rule_set');
+	o.modalonly = true;
+
+	o = s.option(form.DummyValue, '_entry', _('Entry'));
+	o.load = function(section_id) {
+		const option = uci.get(uciconfig, section_id, 'type');
+
+		return uci.get(uciconfig, section_id, option)?.join(',');
+	}
+	o.modalonly = false;
+
+	o = s.option(form.MultiValue, 'server', _('DNS server'));
+	o.value('default-dns');
+	o.default = 'default-dns';
+	o.load = loadDNSServerLabel;
+	o.validate = validateNameserver;
+	o.rmempty = false;
+	o.editable = true;
+
+	o = s.option(hm.ListValue, 'proxy', _('Proxy group override'),
+		_('Override the Proxy group of DNS server.'));
+	o.default = hm.preset_outbound.direct[0][0];
+	hm.preset_outbound.direct.forEach((res) => {
+		o.value.apply(o, res);
+	})
+	o.load = L.bind(hm.loadProxyGroupLabel, o, hm.preset_outbound.direct);
+	o.editable = true;
 }
 
 return view.extend({
@@ -1143,9 +1217,11 @@ return view.extend({
 							'- DST-PORT,80,DIRECT\n' +
 							'- SRC-PORT,7777,DIRECT\n' +
 							'- PROCESS-PATH,/usr/bin/wget,auto\n' +
+							'- PROCESS-PATH-WILDCARD,/usr/*/wget,GLOBAL\n' +
 							'- PROCESS-PATH-REGEX,.*bin/wget,auto\n' +
 							'- PROCESS-PATH-REGEX,(?i).*Application\\\\chrome.*,GLOBAL\n' +
 							'- PROCESS-NAME,curl,auto\n' +
+							'- PROCESS-NAME-WILDCARD,*telegram*,GLOBAL\n' +
 							'- PROCESS-NAME-REGEX,curl$,auto\n' +
 							'- PROCESS-NAME-REGEX,(?i)Telegram,GLOBAL\n' +
 							'- PROCESS-NAME-REGEX,.*telegram.*,GLOBAL\n' +
@@ -1388,8 +1464,10 @@ return view.extend({
 							'    - tls://1.1.1.1\n' +
 							'  proxy-server-nameserver:\n' +
 							'    - https://doh.pub/dns-query\n' +
+							'  proxy-server-nameserver-policy:\n' +
+							"    'www.yournode.com': '223.5.5.5'\n" +
 							'  ...'
-			o.overridecommand = '.dns | pick(["default-nameserver", "proxy-server-nameserver", "nameserver", "fallback", "nameserver-policy"]) | with(.["nameserver-policy"]; . = [.[]] | flatten) | [.[][]] | unique'
+			o.overridecommand = '.dns | pick(["default-nameserver", "proxy-server-nameserver", "nameserver", "fallback", "nameserver-policy", "proxy-server-nameserver-policy"]) | with(.["nameserver-policy"]; . = [.[]] | flatten) | with(.["proxy-server-nameserver-policy"]; . = [.[]] | flatten) | [.[][]] | unique'
 			o.parseYaml = parseDNSYaml;
 
 			return o.render();
@@ -1548,7 +1626,7 @@ return view.extend({
 		so.depends({'ecs': /.+/});
 		so.modalonly = true;
 
-		so = ss.option(form.Flag, 'disable-ipv4', _('Discard A responses'));
+		so = ss.option(form.Flag, 'disable-ipv4', _('Filter record: %s').format('A'));
 		so.default = so.disabled;
 		so.load = function(section_id) {
 			return boolToFlag(new DNSAddress(uci.get(data[0], section_id, 'address')).parseParam('disable-ipv4') ? true : false);
@@ -1564,7 +1642,7 @@ return view.extend({
 		so.write = function() {};
 		so.modalonly = true;
 
-		so = ss.option(form.Flag, 'disable-ipv6', _('Discard AAAA responses'));
+		so = ss.option(form.Flag, 'disable-ipv6', _('Filter record: %s').format('AAAA'));
 		so.default = so.disabled;
 		so.load = function(section_id) {
 			return boolToFlag(new DNSAddress(uci.get(data[0], section_id, 'address')).parseParam('disable-ipv6') ? true : false);
@@ -1579,7 +1657,76 @@ return view.extend({
 		}
 		so.write = function() {};
 		so.modalonly = true;
+
+		so = ss.option(form.DynamicList, 'disable-qtypes', _('Filter record type:'));
+		so.datatype = 'uinteger';
+		so.placeholder = '65';
+		so.load = function(section_id) {
+			return new DNSAddress(uci.get(data[0], section_id, 'address')).parseParam('disable-qtypes');
+		}
+		so.onchange = function(ev, section_id, value) {
+			let UIEl = this.section.getUIElement(section_id, 'address');
+
+			let newvalue = new DNSAddress(UIEl.getValue()).setParam('disable-qtypes', value).toString();
+
+			UIEl.node.previousSibling.innerText = newvalue;
+			UIEl.setValue(newvalue);
+		}
+		so.write = function() {};
+		so.modalonly = true;
 		/* DNS server END */
+
+		/* Bootstrap DNS policy (Node) START */
+		s.tab('dns_node_policy', _('Bootstrap DNS policy (Node)'));
+
+		/* Bootstrap DNS policy (Node) */
+		o = s.taboption('dns_node_policy', form.SectionValue, '_dns_node_policy', hm.GridSection, 'dns_node_policy', null);
+		ss = o.subsection;
+		ss.addremove = true;
+		ss.rowcolors = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+		ss.hm_modaltitle = [ _('Bootstrap DNS policy (Node)'), _('Add a Bootstrap DNS policy (Node)') ];
+		ss.hm_prefmt = hm.glossary[ss.sectiontype].prefmt;
+		ss.hm_field  = hm.glossary[ss.sectiontype].field;
+		ss.hm_lowcase_only = false;
+		/* Import mihomo config start */
+		ss.handleYamlImport = function() {
+			const field = this.hm_field;
+			const o = new hm.HandleImport(this.map, this, _('Import mihomo config'),
+				_('Please type <code>%s</code> fields of mihomo config.</br>')
+					.format(field));
+			o.placeholder = 'proxy-server-nameserver-policy:\n' +
+							"  'www.yournode.com': '223.5.5.5'\n" +
+							'  ...'
+			o.parseYaml = parseDNSPolicyYaml;
+
+			return o.render();
+		}
+		ss.renderSectionAdd = function(/* ... */) {
+			let el = hm.GridSection.prototype.renderSectionAdd.apply(this, arguments);
+
+			el.appendChild(E('button', {
+				'class': 'cbi-button cbi-button-add',
+				'title': _('mihomo config'),
+				'click': ui.createHandlerFn(this, 'handleYamlImport')
+			}, [ _('Import mihomo config') ]));
+
+			return el;
+		}
+		/* Import mihomo config end */
+
+		so = ss.option(form.Value, 'label', _('Label'));
+		so.load = hm.loadDefaultLabel;
+		so.validate = hm.validateUniqueValue;
+		so.modalonly = true;
+
+		so = ss.option(form.Flag, 'enabled', _('Enable'));
+		so.default = so.enabled;
+		so.editable = true;
+
+		renderPolicies(ss, data[0]);
+		/* Bootstrap DNS policy (Node) END */
 
 		/* DNS policy START */
 		s.tab('dns_policy', _('DNS policy'));
@@ -1640,53 +1787,7 @@ return view.extend({
 			], ...arguments);
 		}
 
-		so = ss.option(form.ListValue, 'type', _('Type'));
-		so.value('domain', _('Domain'));
-		so.value('geosite', _('Geosite'));
-		so.value('rule_set', _('Rule set'));
-		so.default = 'domain';
-
-		so = ss.option(form.DynamicList, 'domain', _('Domain'),
-			_('Match domain. Support wildcards.'));
-		so.depends('type', 'domain');
-		so.modalonly = true;
-
-		so = ss.option(form.DynamicList, 'geosite', _('Geosite'),
-			_('Match geosite.'));
-		so.depends('type', 'geosite');
-		so.modalonly = true;
-
-		so = ss.option(form.MultiValue, 'rule_set', _('Rule set'),
-			_('Match rule set.'));
-		so.value('', _('-- Please choose --'));
-		so.load = L.bind(hm.loadRulesetLabel, so, [['', _('-- Please choose --')]], ['domain', 'classical']);
-		so.depends('type', 'rule_set');
-		so.modalonly = true;
-
-		so = ss.option(form.DummyValue, '_entry', _('Entry'));
-		so.load = function(section_id) {
-			const option = uci.get(data[0], section_id, 'type');
-
-			return uci.get(data[0], section_id, option)?.join(',');
-		}
-		so.modalonly = false;
-
-		so = ss.option(form.MultiValue, 'server', _('DNS server'));
-		so.value('default-dns');
-		so.default = 'default-dns';
-		so.load = loadDNSServerLabel;
-		so.validate = validateNameserver;
-		so.rmempty = false;
-		so.editable = true;
-
-		so = ss.option(hm.ListValue, 'proxy', _('Proxy group override'),
-			_('Override the Proxy group of DNS server.'));
-		so.default = hm.preset_outbound.direct[0][0];
-		hm.preset_outbound.direct.forEach((res) => {
-			so.value.apply(so, res);
-		})
-		so.load = L.bind(hm.loadProxyGroupLabel, so, hm.preset_outbound.direct);
-		so.editable = true;
+		renderPolicies(ss, data[0]);
 		/* DNS policy END */
 
 		/* Fallback filter START */

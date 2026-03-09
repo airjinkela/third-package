@@ -8,7 +8,7 @@
 set -e
 
 project_name="ua3f"
-release_version="2.7.0"
+release_version="3.1.0"
 target=main.go
 
 LINUX_ARCHS="amd64 arm arm64 mipsle mips64 riscv64 386 mipsle-softfloat mipsle-hardfloat armv7 armv8"
@@ -37,6 +37,7 @@ mkdir -p "$release_dir" "$dist/bin"
 cd "$project_root"
 gofmt -w ./
 cd "$project_root/src"
+go generate ./...
 
 for target_item in $TARGET_LIST; do
     goos=$(echo "$target_item" | cut -d'/' -f1)

@@ -6,39 +6,25 @@
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/SunBK201/UA3F/total?label=GitHub%20Downloads&link=https%3A%2F%2Fgithub.com%2FSunBK201%2FUA3F%2Freleases)
 [![Telegram group](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.swo.moe%2Fstats%2Ftelegram%2Fcrack_campus_network&query=count&color=2CA5E0&label=Telegram%20Group&logo=telegram&cacheSeconds=3600)](https://t.me/crack_campus_network)
 
+<img align="right" src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-210.png" alt="UA3F" width="300">
+
 [English](README_EN.md) | 简体中文
 
-UA3F 是一个 HTTP 重写工具，作为一个 HTTP、SOCKS5、TPROXY、REDIRECT、NFQUEUE 服务对 HTTP 流量 (例如 User-Agent) 进行高效透明重写。
+UA3F 是一个 HTTP(S) 重写工具，作为一个 HTTP、SOCKS5、TPROXY、REDIRECT、NFQUEUE 服务对 HTTP(S) 流量 (例如 User-Agent) 进行高效透明重写。
 
-<table>
-  <tr>
-    <td>
-      <ul>
-        <li>支持 HTTP 请求与响应的 Header、Body 双向重写</li>
-        <li>支持 HTTP URL 重定向：302、307、Header</li>
-        <li>应用层服务模式：HTTP、SOCKS5</li>
-        <li>传输层服务模式：TPROXY、REDIRECT</li>
-        <li>网络层服务模式：NFQUEUE(<a href="https://github.com/Zxilly/UA2F">UA2F</a>)</li>
-        <li>高度灵活的重写规则系统，支持多种规则类型与重写策略</li>
-        <li>实时统计面板，支持流量修改监控与分析</li>
-        <li>支持 opkg 安装、编译安装、Docker 部署多种方式</li>
-        <li>兼容 Clash Fake-IP & Redir-Host 多种模式伴生运行</li>
-        <li>支持 TTL，TCP Timestamp，TCP Window，IPID 伪装</li>
-        <li>支持 TCP Desync 分片乱序发射，用于对抗深度包检测（DPI）</li>
-      </ul>
-    </td>
-    <td>
-      <img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-210.png" alt="UA3F" width="300">
-    </td>
-  </tr>
-</table>
-
-<table>
-  <tr>
-    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-270-luci.png" alt="UA3F-LuCI"></td>
-    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-270-rule.png" alt="UA3F-Rules"></td>
-  </tr>
-</table>
+- 支持 HTTP(S) 请求与响应的 Header、Body 双向重写
+- 支持 HTTP(S) URL 重定向：302、307、Header
+- 支持 HTTPS MitM 流量解密重写
+- 应用层服务模式：HTTP、SOCKS5
+- 传输层服务模式：TPROXY、REDIRECT
+- 网络层服务模式：NFQUEUE(<a href="https://github.com/Zxilly/UA2F">UA2F</a>)
+- 高度灵活的重写规则系统，支持多种规则类型与重写策略
+- 实时统计面板，支持流量修改监控与分析
+- 支持 opkg 安装、编译安装、Docker 部署多种方式
+- 兼容 Clash Fake-IP & Redir-Host 多种模式伴生运行
+- 支持 TTL，TCP Timestamp，TCP Window，IPID 伪装
+- 支持 Desync 分片乱序发射与混淆，用于对抗深度包检测（DPI）
+- 支持 eBPF 流量卸载，加速转发性能
 
 ## 部署
 
@@ -78,6 +64,8 @@ UA3F 支持 OpenWrt LuCI Web 页面，可以打开 Services -> UA3F 进行相关
 
 UA3F 支持 yaml 文件进行配置，通过 `-c` 参数指定配置文件路径， 通过 `-g` 参数生成模板配置文件，配置文件示例见 [config.yaml](docs/config.yaml)
 
+详细命令行配置说明见 [CLI.md](docs/cli.md)
+
 设备与系统信息正则表达式参考：
 
 ```regex
@@ -116,6 +104,12 @@ sudo -u shellcrash /usr/bin/ua3f
 
 </details>
 
+### API Server
+
+UA3F 内置 API Server 控制器，提供 UA3F 运行状态、配置规则等信息查询与控制接口，可以通过 `--api-server <addr:port>` 参数启用。
+
+API 文档见 [API.md](docs/api.md)
+
 ### 服务模式说明
 
 UA3F 支持 5 种不同的服务模式，各模式的特点和使用场景如下：
@@ -145,6 +139,7 @@ UA3F 支持 3 种不同的重写策略：
 | DOMAIN         | 根据域名进行匹配               |
 | DOMAIN-SUFFIX  | 根据域名后缀进行匹配           |
 | DOMAIN-KEYWORD | 根据域名关键字进行匹配         |
+| DOMAIN-SET     | 根据域名集合进行匹配           |
 | IP-CIDR        | 根据 IP 地址段进行匹配         |
 | SRC-IP         | 根据源 IP 地址进行匹配         |
 | DST-PORT       | 根据目标端口进行匹配           |
@@ -161,6 +156,7 @@ UA3F 支持 3 种不同的重写策略：
 | ADD           | 添加指定 Header 为指定内容     |
 | REPLACE       | 替换指定 Header 为指定内容     |
 | REPLACE-REGEX | 将匹配正则的部分替换为指定内容 |
+| REJECT        | 拒绝该请求                     |
 | DROP          | 丢弃该请求                     |
 
 URL 重定向动作：
@@ -170,14 +166,18 @@ URL 重定向动作：
 | REDIRECT-307 | 返回 307 重定向响应 |
 | REDIRECT-HEADER | 修改请求 Header 进行重定向，客户端无感知 |
 
+## Desync 说明
+
+详见 [UA3F Desync](docs/desync.md)
+
 ## Clash 配置建议
 
 见 [Clash 配置](docs/clash/Clash.md)
 
-## References & Thanks
+## Credits
 
-- [UA2F](https://github.com/Zxilly/UA2F)
-- [uaProxy](https://github.com/huhu415/uaProxy)
-- [xmurp-ua](https://github.com/CHN-beta/xmurp-ua)
-- [Clash](https://github.com/Dreamacro/clash)
-- [mihomo](https://github.com/MetaCubeX/mihomo)
+- [Zxilly/UA2F](https://github.com/Zxilly/UA2F)
+- [huhu415/uaProxy](https://github.com/huhu415/uaProxy)
+- [CHN-beta/xmurp-ua](https://github.com/CHN-beta/xmurp-ua)
+- [Dreamacro/clash](https://github.com/Dreamacro/clash)
+- [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo)

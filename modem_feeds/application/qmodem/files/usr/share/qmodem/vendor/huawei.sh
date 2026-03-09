@@ -225,7 +225,7 @@ function sim_info()
 {
     class="SIM Information"
     
-    sim_slot="1"
+    sim_slot=$(cat /tmp/huawei_sim_slot_$config_section)||sim_slot="0"
 
     #SIM Status（SIM状态）
     at_command="AT+CPIN?"
@@ -834,4 +834,43 @@ function _parse_hfreqinfo(){
         esac
     done
     unset IFS
+}
+
+# get sim switch capabilities
+sim_switch_capabilities(){
+    json_add_string "supportSwitch" "1"
+    json_add_string "ExtraInfo" "Huawei Modem does not support querying SIM slot capabilities via AT commands.Slot display may be incorrect."
+    json_add_array "simSlots"
+    json_add_string "" "0"
+    json_add_string "" "1"
+    json_close_array
+}
+
+get_sim_slot(){
+    #local at_command="AT^HVSST?"
+	#sim_slot=$(at $at_port $at_command | grep "HVSST:" | awk -F',' '{print $3}' | xargs)
+    sim_slot=$(cat /tmp/huawei_sim_slot_$config_section)||sim_slot="0" && echo "$sim_slot" > /tmp/huawei_sim_slot_$config_section
+    json_add_string "sim_slot" "$sim_slot"
+}
+
+set_sim_slot(){
+    local sim_slot=$1
+    case $platform in
+        "unisoc")
+            at_command="AT^SIMSWITCH=$sim_slot"
+            ;;
+        "hisilicon")
+            case $sim_slot in
+                "0")
+                    at_command="AT^SCICHG=0,1"
+                    ;;
+                "1")
+                    at_command="AT^SCICHG=1,0"
+                    ;;
+            esac
+            ;;
+    esac
+    echo "$sim_slot" > /tmp/huawei_sim_slot_$config_section
+    response=$(at $at_port $at_command | xargs)
+    json_add_string "result" "$response"
 }

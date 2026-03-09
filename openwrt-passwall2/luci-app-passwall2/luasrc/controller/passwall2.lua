@@ -1,4 +1,5 @@
 -- Copyright (C) 2022-2025 xiaorouji
+-- Copyright (C) 2026 Openwrt-Passwall Organization
 
 module("luci.controller.passwall2", package.seeall)
 local api = require "luci.passwall2.api"
@@ -9,6 +10,7 @@ local util = require "luci.util"
 local i18n = require "luci.i18n"
 local fs = api.fs
 local jsonStringify = luci.jsonc.stringify
+local jsonParse = luci.jsonc.parse
 
 function index()
 	if not nixio.fs.access("/etc/config/passwall2") then
@@ -41,7 +43,9 @@ function index()
 	end
 	entry({"admin", "services", appname, "app_update"}, cbi(appname .. "/client/app_update"), _("App Update"), 95).leaf = true
 	entry({"admin", "services", appname, "rule"}, cbi(appname .. "/client/rule"), _("Rule Manage"), 96).leaf = true
-	entry({"admin", "services", appname, "geoview"}, form(appname .. "/client/geoview"), _("Geo View"), 97).leaf = true
+	if api.finded_com("geoview") then
+		entry({"admin", "services", appname, "geoview"}, form(appname .. "/client/geoview"), _("Geo View"), 97).leaf = true
+	end
 	entry({"admin", "services", appname, "node_subscribe_config"}, cbi(appname .. "/client/node_subscribe_config")).leaf = true
 	entry({"admin", "services", appname, "node_config"}, cbi(appname .. "/client/node_config")).leaf = true
 	entry({"admin", "services", appname, "shunt_rules"}, cbi(appname .. "/client/shunt_rules")).leaf = true
@@ -75,6 +79,7 @@ function index()
 	entry({"admin", "services", appname, "ping_node"}, call("ping_node")).leaf = true
 	entry({"admin", "services", appname, "urltest_node"}, call("urltest_node")).leaf = true
 	entry({"admin", "services", appname, "add_node"}, call("add_node")).leaf = true
+	entry({"admin", "services", appname, "update_node"}, call("update_node")).leaf = true
 	entry({"admin", "services", appname, "set_node"}, call("set_node")).leaf = true
 	entry({"admin", "services", appname, "copy_node"}, call("copy_node")).leaf = true
 	entry({"admin", "services", appname, "clear_all_nodes"}, call("clear_all_nodes")).leaf = true
@@ -84,6 +89,7 @@ function index()
 	entry({"admin", "services", appname, "save_node_order"}, call("save_node_order")).leaf = true
 	entry({"admin", "services", appname, "save_node_list_opt"}, call("save_node_list_opt")).leaf = true
 	entry({"admin", "services", appname, "update_rules"}, call("update_rules")).leaf = true
+	entry({"admin", "services", appname, "rollback_rules"}, call("rollback_rules")).leaf = true
 	entry({"admin", "services", appname, "subscribe_del_node"}, call("subscribe_del_node")).leaf = true
 	entry({"admin", "services", appname, "subscribe_del_all"}, call("subscribe_del_all")).leaf = true
 	entry({"admin", "services", appname, "subscribe_manual"}, call("subscribe_manual")).leaf = true
@@ -110,6 +116,16 @@ end
 local function http_write_json(content)
 	http.prepare_content("application/json")
 	http.write(jsonStringify(content or {code = 1}))
+end
+
+local function http_write_json_ok(data)
+	http.prepare_content("application/json")
+	http.write(jsonStringify({code = 1, data = data}))
+end
+
+local function http_write_json_error(data)
+	http.prepare_content("application/json")
+	http.write(jsonStringify({code = 0, data = data}))
 end
 
 function reset_config()
@@ -341,9 +357,11 @@ function add_node()
 	uci:section(appname, "nodes", uuid)
 
 	local group = http.formvalue("group")
-	if group then
+	if group and group ~= "default" then
 		uci:set(appname, uuid, "group", group)
 	end
+
+	uci:set(appname, uuid, "type", "Xray")
 
 	if redirect == "1" then
 		api.uci_save(uci, appname)
@@ -352,6 +370,23 @@ function add_node()
 		api.uci_save(uci, appname, true, true)
 		http_write_json({result = uuid})
 	end
+end
+
+function update_node()
+	local id = http.formvalue("id") -- Node id
+	local data = http.formvalue("data") -- json new Data
+	if id and data then
+		local data_t = jsonParse(data) or {}
+		if next(data_t) then
+			for k, v in pairs(data_t) do
+				uci:set(appname, id, k, v)
+			end
+			api.uci_save(uci, appname)
+			http_write_json_ok()
+			return
+		end
+	end
+	http_write_json_error()
 end
 
 function set_node()
@@ -579,6 +614,19 @@ function update_rules()
 	http_write_json()
 end
 
+function rollback_rules()
+	local arg_type = http.formvalue("type")
+	if arg_type ~= "geoip" and arg_type ~= "geosite" then
+		http_write_json_error()
+		return
+	end
+	local bak_dir = "/tmp/bak_v2ray/"
+	local geo_dir = (uci:get(appname, "@global_rules[0]", "v2ray_location_asset") or "/usr/share/v2ray/")
+	fs.move(bak_dir .. arg_type .. ".dat", geo_dir .. arg_type .. ".dat")
+	fs.rmdir(bak_dir)
+	http_write_json_ok()
+end
+
 function server_user_status()
 	local e = {}
 	e.index = http.formvalue("index")
@@ -717,27 +765,56 @@ function geo_view()
 		http.write(i18n.translate("Please enter query content!"))
 		return
 	end
+	local function get_rules(str, type)
+		local rules_id = {}
+		uci:foreach(appname, "shunt_rules", function(s)
+			local list
+			if type == "geoip" then list = s.ip_list else list = s.domain_list end
+			for line in string.gmatch((list or ""), "[^\r\n]+") do
+				if line ~= "" and not line:find("#") then
+					local prefix, main = line:match("^(.-):(.*)")
+					if not main then main = line end
+					if type == "geoip" and (api.datatypes.ipaddr(str) or api.datatypes.ip6addr(str)) then
+						if main:find(str, 1, true) then rules_id[#rules_id + 1] = s[".name"] end
+					else
+						if main == str then rules_id[#rules_id + 1] = s[".name"] end
+					end
+				end
+			end
+		end)
+		return rules_id
+	end
 	local geo_dir = (uci:get(appname, "@global_rules[0]", "v2ray_location_asset") or "/usr/share/v2ray/"):match("^(.*)/")
 	local geosite_path = geo_dir .. "/geosite.dat"
 	local geoip_path = geo_dir .. "/geoip.dat"
 	local geo_type, file_path, cmd
 	local geo_string = ""
+	local bin = api.finded_com("geoview")
 	if action == "lookup" then
 		if api.datatypes.ipaddr(value) or api.datatypes.ip6addr(value) then
 			geo_type, file_path = "geoip", geoip_path
 		else
 			geo_type, file_path = "geosite", geosite_path
 		end
-		cmd = string.format("geoview -type %s -action lookup -input '%s' -value '%s' -lowmem=true", geo_type, file_path, value)
+		cmd = string.format("%q -type %q -action lookup -input %q -value %q -lowmem=true", bin, geo_type, file_path, value)
 		geo_string = luci.sys.exec(cmd):lower()
 		if geo_string ~= "" then
-			local lines = {}
-			for line in geo_string:gmatch("([^\n]*)\n?") do
-				if line ~= "" then
-					table.insert(lines, geo_type .. ":" .. line)
+			local lines, rules, seen = {}, {}, {}
+			for line in geo_string:gmatch("([^\n]+)") do
+				lines[#lines + 1] = geo_type .. ":" .. line
+				for _, r in ipairs(get_rules(line, geo_type) or {}) do
+					if not seen[r] then seen[r] = true; rules[#rules + 1] = r end
 				end
 			end
+			for _, r in ipairs(get_rules(value, geo_type) or {}) do
+				if not seen[r] then seen[r] = true; rules[#rules + 1] = r end
+			end
 			geo_string = table.concat(lines, "\n")
+			if #rules > 0 then
+				geo_string = geo_string .. "\n--------------------\n"
+				geo_string = geo_string .. i18n.translate("Rules containing this value:") .. "\n"
+				geo_string = geo_string .. table.concat(rules, "\n")
+			end
 		end
 	elseif action == "extract" then
 		local prefix, list = value:match("^(geoip:)(.*)$")
@@ -747,7 +824,7 @@ function geo_view()
 		if prefix and list and list ~= "" then
 			geo_type = prefix:sub(1, -2)
 			file_path = (geo_type == "geoip") and geoip_path or geosite_path
-			cmd = string.format("geoview -type %s -action extract -input '%s' -list '%s' -lowmem=true", geo_type, file_path, list)
+			cmd = string.format("%q -type %q -action extract -input %q -list %q -lowmem=true", bin, geo_type, file_path, list)
 			geo_string = luci.sys.exec(cmd)
 		end
 	end

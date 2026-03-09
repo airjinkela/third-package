@@ -14,38 +14,38 @@ import (
 )
 
 type PacketRewriter struct {
+	uaRegex        *regexp2.Regexp
+	Recorder       *statistics.Recorder
 	rewriteMode    config.RewriteMode
 	UserAgent      string
-	uaRegex        *regexp2.Regexp
 	partialReplace bool
-	Recorder       *statistics.Recorder
 }
 
 var (
 	uaTag = []byte("\r\nUser-Agent:")
 )
 
-func (r *PacketRewriter) RewriteRequest(metadata *common.Metadata) (decision *RewriteDecision) {
+func (r *PacketRewriter) RewriteRequest(metadata *common.Metadata) (decision *common.RewriteDecision) {
 	if r.rewriteMode == config.RewriteModeDirect {
-		return &RewriteDecision{
+		return &common.RewriteDecision{
 			Modified: false,
 		}
 	}
 	if len(metadata.Packet.TCP.Payload) == 0 {
-		return &RewriteDecision{
+		return &common.RewriteDecision{
 			Modified: false,
 		}
 	}
 	hasUA, modified, skip := r.RewritePacketUserAgent(metadata.Packet.TCP.Payload, metadata.SrcAddr(), metadata.DestAddr())
-	return &RewriteDecision{
+	return &common.RewriteDecision{
 		Modified: modified,
 		HasUA:    hasUA,
 		NeedSkip: skip,
 	}
 }
 
-func (r *PacketRewriter) RewriteResponse(metadata *common.Metadata) (decision *RewriteDecision) {
-	return &RewriteDecision{
+func (r *PacketRewriter) RewriteResponse(metadata *common.Metadata) (decision *common.RewriteDecision) {
+	return &common.RewriteDecision{
 		Action: action.DirectAction,
 	}
 }
@@ -56,6 +56,18 @@ func (r *PacketRewriter) ServeRequest() bool {
 
 func (r *PacketRewriter) ServeResponse() bool {
 	return false
+}
+
+func (r *PacketRewriter) HeaderRules() []common.Rule {
+	return nil
+}
+
+func (r *PacketRewriter) BodyRules() []common.Rule {
+	return nil
+}
+
+func (r *PacketRewriter) RedirectRules() []common.Rule {
+	return nil
 }
 
 func NewPacketRewriter(cfg *config.Config, recorder *statistics.Recorder) (*PacketRewriter, error) {

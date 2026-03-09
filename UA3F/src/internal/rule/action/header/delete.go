@@ -1,6 +1,7 @@
 package header
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -12,8 +13,8 @@ import (
 type Delete struct {
 	recorder  *statistics.Recorder
 	header    string
-	contine   bool
 	direction common.Direction
+	contine   bool
 }
 
 func (d *Delete) Type() common.ActionType {
@@ -58,6 +59,15 @@ func (d *Delete) Execute(metadata *common.Metadata) (bool, error) {
 
 func (d *Delete) Direction() common.Direction {
 	return d.direction
+}
+
+func (d *Delete) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"type":      d.Type(),
+		"header":    d.header,
+		"continue":  d.contine,
+		"direction": d.direction,
+	})
 }
 
 func (d *Delete) LogValue() slog.Value {

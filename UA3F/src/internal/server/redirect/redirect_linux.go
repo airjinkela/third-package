@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/sunbk201/ua3f/internal/bpf"
 	"github.com/sunbk201/ua3f/internal/common"
 	"github.com/sunbk201/ua3f/internal/config"
+	"github.com/sunbk201/ua3f/internal/mitm"
 	"github.com/sunbk201/ua3f/internal/netfilter"
 	"github.com/sunbk201/ua3f/internal/rewrite"
 	"github.com/sunbk201/ua3f/internal/server/base"
@@ -25,11 +27,13 @@ import (
 type Server struct {
 	base.Server
 	netfilter.Firewall
-	listener net.Listener
-	so_mark  int
+	listener  net.Listener
+	so_mark   int
+	done      chan struct{}
+	loopAddrs map[string]bool
 }
 
-func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Server {
+func New(cfg *config.Config, rw common.Rewriter, rc *statistics.Recorder, middleMan *mitm.MiddleMan, bpf *bpf.BPF) *Server {
 	s := &Server{
 		Server: base.Server{
 			Cfg:        cfg,
@@ -42,8 +46,11 @@ func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Serv
 					return bufio.NewReaderSize(nil, 16*1024)
 				},
 			},
+			MiddleMan: middleMan,
+			BPF:       bpf,
 		},
 		so_mark: base.SO_MARK,
+		done:    make(chan struct{}),
 	}
 	s.Firewall = netfilter.Firewall{
 		Nftable: &knftables.Table{
@@ -67,16 +74,41 @@ func (s *Server) Start() (err error) {
 		return err
 	}
 
-	listenAddr := fmt.Sprintf("0.0.0.0:%d", s.Cfg.Port)
-	if s.listener, err = net.Listen("tcp", listenAddr); err != nil {
-		return fmt.Errorf("net.Listen: %w", err)
+	if s.listener == nil {
+		listenAddr := fmt.Sprintf("0.0.0.0:%d", s.Cfg.Port)
+		if s.listener, err = net.Listen("tcp", listenAddr); err != nil {
+			return fmt.Errorf("net.Listen: %w", err)
+		}
 	}
 
 	s.Recorder.Start()
 
+	// Build a set of all local addresses on the listening port.
+	// Connections to any of these would loop back to us.
+	s.loopAddrs = make(map[string]bool)
+	port := s.Cfg.Port
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range addrs {
+			if ipNet, ok := a.(*net.IPNet); ok {
+				ip := ipNet.IP
+				if ip.To4() != nil {
+					s.loopAddrs[fmt.Sprintf("%s:%d", ip.String(), port)] = true
+				} else {
+					s.loopAddrs[fmt.Sprintf("[%s]:%d", ip.String(), port)] = true
+				}
+			}
+		}
+	}
+
 	go func() {
 		var client net.Conn
 		for {
+			select {
+			case <-s.done:
+				return
+			default:
+			}
+
 			if client, err = s.listener.Accept(); err != nil {
 				if errors.Is(err, syscall.EMFILE) {
 					time.Sleep(time.Second)
@@ -86,7 +118,7 @@ func (s *Server) Start() (err error) {
 				slog.Error("s.listener.Accept", slog.Any("error", err))
 				continue
 			}
-			slog.Debug("Accept connection", slog.String("addr", client.RemoteAddr().String()))
+			slog.Debug("Accepted connection", slog.String("remote", client.RemoteAddr().String()), slog.String("local", client.LocalAddr().String()))
 			go s.HandleClient(client)
 		}
 	}()
@@ -95,10 +127,53 @@ func (s *Server) Start() (err error) {
 
 func (s *Server) Close() error {
 	_ = s.Firewall.Cleanup()
+
+	if s.done != nil {
+		select {
+		case <-s.done:
+		default:
+			close(s.done)
+		}
+	}
+
 	if s.listener != nil {
 		return s.listener.Close()
 	}
+	s.BPF.Close()
 	return nil
+}
+
+func (s *Server) Restart(cfg *config.Config) (common.Server, error) {
+	if err := s.Close(); err != nil {
+		return nil, err
+	}
+
+	newRewriter, err := rewrite.New(cfg, s.Recorder)
+	if err != nil {
+		slog.Error("rewrite.New", slog.Any("error", err))
+		return nil, err
+	}
+
+	newMiddleMan, err := mitm.NewMiddleMan(cfg)
+	if err != nil {
+		slog.Error("mitm.NewMiddleMan", slog.Any("error", err))
+		return nil, err
+	}
+
+	newServer := New(cfg, newRewriter, s.Recorder, newMiddleMan, s.BPF)
+
+	newServer.listener = s.listener
+	if err := newServer.Start(); err != nil {
+		return nil, err
+	}
+	if s.done != nil {
+		select {
+		case <-s.done:
+		default:
+			close(s.done)
+		}
+	}
+	return newServer, nil
 }
 
 func (s *Server) HandleClient(client net.Conn) {
@@ -106,6 +181,12 @@ func (s *Server) HandleClient(client net.Conn) {
 	if err != nil {
 		_ = client.Close()
 		slog.Error("base.GetOriginalDstAddr", slog.Any("error", err), slog.String("client", client.RemoteAddr().String()))
+		return
+	}
+
+	if s.loopAddrs[addr] {
+		_ = client.Close()
+		slog.Warn("loop detected, dropping connection to self", slog.String("addr", addr))
 		return
 	}
 

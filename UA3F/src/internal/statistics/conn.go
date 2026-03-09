@@ -16,18 +16,19 @@ type ConnectionRecordList struct {
 	recordAddChan    chan *ConnectionRecord
 	recordRemoveChan chan *ConnectionRecord
 	records          map[string]*ConnectionRecord
+	dumpWriter       *bufio.Writer
+	dumpFile         string
+	dumpRecords      []*ConnectionRecord
+	dumpInterval     time.Duration
+	cleanupInterval  time.Duration
 	mu               sync.RWMutex
-
-	dumpRecords []*ConnectionRecord
-	dumpFile    string
-	dumpWriter  *bufio.Writer
 }
 
 type ConnectionRecord struct {
+	StartTime time.Time
 	Protocol  sniff.Protocol
 	SrcAddr   string
 	DestAddr  string
-	StartTime time.Time
 }
 
 func NewConnectionRecordList(dumpFile string) *ConnectionRecordList {
@@ -39,13 +40,17 @@ func NewConnectionRecordList(dumpFile string) *ConnectionRecordList {
 		dumpRecords:      make([]*ConnectionRecord, 0, 500),
 		dumpFile:         dumpFile,
 		dumpWriter:       bufio.NewWriter(nil),
+		dumpInterval:     5 * time.Second,
+		cleanupInterval:  24 * time.Hour,
 	}
 }
 
 func (l *ConnectionRecordList) Run() {
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
+		dumpTicker := time.NewTicker(l.dumpInterval)
+		cleanupTicker := time.NewTicker(l.cleanupInterval)
+		defer dumpTicker.Stop()
+		defer cleanupTicker.Stop()
 
 		for {
 			select {
@@ -53,8 +58,10 @@ func (l *ConnectionRecordList) Run() {
 				l.Add(record)
 			case record := <-l.recordRemoveChan:
 				l.Remove(record)
-			case <-ticker.C:
+			case <-dumpTicker.C:
 				l.Dump()
+			case <-cleanupTicker.C:
+				l.Cleanup()
 			}
 		}
 	}()
@@ -87,6 +94,19 @@ func (l *ConnectionRecordList) Remove(record *ConnectionRecord) {
 
 	key := fmt.Sprintf("%s-%s", record.SrcAddr, record.DestAddr)
 	delete(l.records, key)
+}
+
+func (l *ConnectionRecordList) Cleanup() {
+	cutoff := time.Now().Add(-l.cleanupInterval)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for key, record := range l.records {
+		if record.StartTime.Before(cutoff) {
+			delete(l.records, key)
+		}
+	}
 }
 
 func (l *ConnectionRecordList) Dump() {

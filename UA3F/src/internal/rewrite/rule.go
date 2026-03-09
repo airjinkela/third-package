@@ -19,13 +19,13 @@ type RuleRewriter struct {
 	Recorder          *statistics.Recorder
 }
 
-func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *RewriteDecision) {
+func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *common.RewriteDecision) {
 	ua := metadata.UserAgent()
 	log.LogInfoWithAddr(metadata.SrcAddr(), metadata.DestAddr(), fmt.Sprintf("Original User-Agent: (%s)", ua))
 
 	var matchedRule common.Rule
 
-	decision = &RewriteDecision{
+	decision = &common.RewriteDecision{
 		Action: action.DirectAction,
 	}
 	matchedRule = nil
@@ -44,8 +44,11 @@ func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *Rewr
 			break
 		}
 	}
+	if decision.Action == action.RejectRequestAction {
+		return
+	}
 
-	decision = &RewriteDecision{
+	decision = &common.RewriteDecision{
 		Action: action.DirectAction,
 	}
 	matchedRule = nil
@@ -67,8 +70,11 @@ func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *Rewr
 			break
 		}
 	}
+	if decision.Action == action.RejectRequestAction {
+		return
+	}
 
-	decision = &RewriteDecision{
+	decision = &common.RewriteDecision{
 		Action:   action.DirectAction,
 		Redirect: false,
 	}
@@ -95,10 +101,10 @@ func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *Rewr
 	return
 }
 
-func (r *RuleRewriter) RewriteResponse(metadata *common.Metadata) (decision *RewriteDecision) {
+func (r *RuleRewriter) RewriteResponse(metadata *common.Metadata) (decision *common.RewriteDecision) {
 	var matchedRule common.Rule
 
-	decision = &RewriteDecision{
+	decision = &common.RewriteDecision{
 		Action: action.DirectAction,
 	}
 	matchedRule = nil
@@ -117,8 +123,11 @@ func (r *RuleRewriter) RewriteResponse(metadata *common.Metadata) (decision *Rew
 			break
 		}
 	}
+	if decision.Action == action.RejectResponseAction {
+		return
+	}
 
-	decision = &RewriteDecision{
+	decision = &common.RewriteDecision{
 		Action: action.DirectAction,
 	}
 	matchedRule = nil
@@ -150,6 +159,18 @@ func (r *RuleRewriter) ServeRequest() bool {
 
 func (r *RuleRewriter) ServeResponse() bool {
 	return r.HeaderRuleEngine.ServeResponse || r.BodyRuleEngine.ServeResponse
+}
+
+func (r *RuleRewriter) HeaderRules() []common.Rule {
+	return r.HeaderRuleEngine.Rules
+}
+
+func (r *RuleRewriter) BodyRules() []common.Rule {
+	return r.BodyRuleEngine.Rules
+}
+
+func (r *RuleRewriter) RedirectRules() []common.Rule {
+	return r.URLRedirectEngine.Rules
 }
 
 func NewRuleRewriter(cfg *config.Config, recorder *statistics.Recorder) (*RuleRewriter, error) {

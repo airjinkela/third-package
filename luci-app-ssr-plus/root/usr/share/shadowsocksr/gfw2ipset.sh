@@ -2,11 +2,25 @@
 
 . $IPKG_INSTROOT/etc/init.d/shadowsocksr
 
-if command -v nft >/dev/null 2>&1; then
-    nft_support=1
-fi
+check_run_environment
+
+case "$USE_TABLES" in
+	nftables)
+		nft_support=1
+		echolog "gfw2ipset: Using nftables"
+		;;
+	iptables)
+		nft_support=0
+		echolog "gfw2ipset: Using iptables"
+		;;
+	*)
+		echolog "ERROR: No supported firewall backend detected"
+		exit 1
+		;;
+esac
 
 netflix() {
+	local port="$1"
 	if [ -f "$TMP_DNSMASQ_PATH/gfw_list.conf" ] && [ -s /etc/ssrplus/netflix.list ]; then
 		grep -vE '^\s*#|^\s*$' /etc/ssrplus/netflix.list > /tmp/ssrplus_netflix.list.clean
 		if [ -s /tmp/ssrplus_netflix.list.clean ]; then
@@ -21,27 +35,37 @@ netflix() {
 	fi
 	if [ "$nft_support" = "1" ]; then
 		# 移除 ipset
-		cat /etc/ssrplus/netflix.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1#$1\nnftset=\/&\/inet#ss_spec#netflix/" >$TMP_DNSMASQ_PATH/netflix_forward.conf
-	else
-		cat /etc/ssrplus/netflix.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1#$1\nipset=\/&\/netflix/" >$TMP_DNSMASQ_PATH/netflix_forward.conf
+		cat /etc/ssrplus/netflix.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1#$port\nnftset=\/&\/inet#ss_spec#netflix/" >$TMP_DNSMASQ_PATH/netflix_forward.conf
+	elif [ "$nft_support" = "0" ]; then
+		cat /etc/ssrplus/netflix.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1#$port\nipset=\/&\/netflix/" >$TMP_DNSMASQ_PATH/netflix_forward.conf
 	fi
 }
 mkdir -p $TMP_DNSMASQ_PATH
-if [ "$(uci_get_by_type global run_mode router)" == "oversea" ]; then
+
+run_mode=$(uci_get_by_type global run_mode router)
+
+if [ "$run_mode" = "oversea" ]; then
 	cp -rf /etc/ssrplus/oversea_list.conf $TMP_DNSMASQ_PATH/
 else
 	cp -rf /etc/ssrplus/gfw_list.conf $TMP_DNSMASQ_PATH/
 	cp -rf /etc/ssrplus/gfw_base.conf $TMP_DNSMASQ_PATH/
 fi
 
-if [ "$nft_support" = "1" ]; then
-	# 移除 ipset 指令
-	for conf_file in gfw_base.conf gfw_list.conf; do
-		if [ -f "$TMP_DNSMASQ_PATH/$conf_file" ]; then
-			sed -i 's|ipset=/\([^/]*\)/\([^[:space:]]*\)|nftset=/\1/inet#ss_spec#\2|g' "$TMP_DNSMASQ_PATH/$conf_file"
+for conf_file in gfw_base.conf gfw_list.conf; do
+	conf="$TMP_DNSMASQ_PATH/$conf_file"
+	[ -f "$conf" ] || continue
+
+	if [ "$run_mode" = "gfw" ]; then
+		if [ "$nft_support" = "1" ]; then
+			# gfw + nft：ipset → nftset
+			sed -i 's|ipset=/\([^/]*\)/\([^[:space:]]*\)|nftset=/\1/inet#ss_spec#\2|g' "$conf"
 		fi
-	done
-fi
+	else
+		# 非 gfw：无条件清理所有分流引用
+		# sed -i '/^[[:space:]]*\(ipset=\|nftset=\)/d' "$conf"
+		sed -i '/^[[:space:]]*ipset=/d' "$conf"
+	fi
+done
 
 if [ "$(uci_get_by_type global netflix_enable 0)" == "1" ]; then
 	# 只有开启 NetFlix分流 才需要取值
@@ -62,7 +86,7 @@ $(uci_get_by_type global global_server nil) | $switch_server | same)
 	;;
 esac
 
-# 此处使用while方式读取 防止 /etc/ssrplus/ 目录下的 black.list white.list deny.list 等2个或多个文件一行中存在空格 比如:# abc.com 而丢失：server
+# 此处使用 for 方式读取 防止 /etc/ssrplus/ 目录下的 black.list white.list deny.list 等2个或多个文件一行中存在空格 比如:# abc.com 而丢失：server
 # Optimize: Batch filter using grep
 for list_file in /etc/ssrplus/black.list /etc/ssrplus/white.list /etc/ssrplus/deny.list; do
 	if [ -s "$list_file" ]; then
@@ -83,7 +107,7 @@ done
 if [ "$nft_support" = "1" ]; then
 	cat /etc/ssrplus/black.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1#$dns_port\nnftset=\/&\/inet#ss_spec#blacklist/" >$TMP_DNSMASQ_PATH/blacklist_forward.conf
 	cat /etc/ssrplus/white.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1\nnftset=\/&\/inet#ss_spec#whitelist/" >$TMP_DNSMASQ_PATH/whitelist_forward.conf
-else
+elif [ "$nft_support" = "0" ]; then
 	cat /etc/ssrplus/black.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1#$dns_port\nipset=\/&\/blacklist/" >$TMP_DNSMASQ_PATH/blacklist_forward.conf
 	cat /etc/ssrplus/white.list | sed '/^$/d' | sed '/#/d' | sed "/.*/s/.*/server=\/&\/127.0.0.1\nipset=\/&\/whitelist/" >$TMP_DNSMASQ_PATH/whitelist_forward.conf
 fi

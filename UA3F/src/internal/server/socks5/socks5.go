@@ -13,8 +13,10 @@ import (
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/luyuhuang/subsocks/socks"
+	"github.com/sunbk201/ua3f/internal/bpf"
 	"github.com/sunbk201/ua3f/internal/common"
 	"github.com/sunbk201/ua3f/internal/config"
+	"github.com/sunbk201/ua3f/internal/mitm"
 	"github.com/sunbk201/ua3f/internal/rewrite"
 	"github.com/sunbk201/ua3f/internal/server/base"
 	"github.com/sunbk201/ua3f/internal/sniff"
@@ -24,10 +26,11 @@ import (
 type Server struct {
 	base.Server
 	listener net.Listener
+	done     chan struct{}
 	so_mark  int
 }
 
-func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Server {
+func New(cfg *config.Config, rw common.Rewriter, rc *statistics.Recorder, middleMan *mitm.MiddleMan, bpf *bpf.BPF) *Server {
 	return &Server{
 		Server: base.Server{
 			Cfg:      cfg,
@@ -39,22 +42,21 @@ func New(cfg *config.Config, rw rewrite.Rewriter, rc *statistics.Recorder) *Serv
 					return bufio.NewReaderSize(nil, 16*1024)
 				},
 			},
+			MiddleMan: middleMan,
+			BPF:       bpf,
 		},
 		so_mark: base.SO_MARK,
+		done:    make(chan struct{}),
 	}
-}
-
-func (s *Server) Close() (err error) {
-	if s.listener != nil {
-		err = s.listener.Close()
-	}
-	return
 }
 
 func (s *Server) Start() (err error) {
-	listenAddr := fmt.Sprintf("%s:%d", s.Cfg.BindAddress, s.Cfg.Port)
-	if s.listener, err = net.Listen("tcp", listenAddr); err != nil {
-		return fmt.Errorf("net.Listen: %w", err)
+	if s.listener == nil {
+		// first time start, create listener
+		listenAddr := fmt.Sprintf("%s:%d", s.Cfg.BindAddress, s.Cfg.Port)
+		if s.listener, err = net.Listen("tcp", listenAddr); err != nil {
+			return fmt.Errorf("net.Listen: %w", err)
+		}
 	}
 
 	s.Recorder.Start()
@@ -62,6 +64,12 @@ func (s *Server) Start() (err error) {
 	go func() {
 		var client net.Conn
 		for {
+			select {
+			case <-s.done:
+				return
+			default:
+			}
+
 			if client, err = s.listener.Accept(); err != nil {
 				if errors.Is(err, syscall.EMFILE) {
 					time.Sleep(time.Second)
@@ -75,6 +83,56 @@ func (s *Server) Start() (err error) {
 		}
 	}()
 	return nil
+}
+
+func (s *Server) Close() (err error) {
+	if s.done != nil {
+		select {
+		case <-s.done:
+			// already closed
+		default:
+			close(s.done)
+		}
+	}
+
+	if s.listener != nil {
+		err = s.listener.Close()
+	}
+
+	s.BPF.Close()
+
+	return
+}
+
+func (s *Server) Restart(cfg *config.Config) (common.Server, error) {
+	newRewriter, err := rewrite.New(cfg, s.Recorder)
+	if err != nil {
+		slog.Error("rewrite.New", slog.Any("error", err))
+		return nil, err
+	}
+
+	newMiddleMan, err := mitm.NewMiddleMan(cfg)
+	if err != nil {
+		slog.Error("mitm.NewMiddleMan", slog.Any("error", err))
+		return nil, err
+	}
+
+	newServer := New(cfg, newRewriter, s.Recorder, newMiddleMan, s.BPF)
+
+	// Inherit the listener from old server for graceful restart
+	newServer.listener = s.listener
+	if err := newServer.Start(); err != nil {
+		return nil, err
+	}
+	if s.done != nil {
+		select {
+		case <-s.done:
+			// already closed
+		default:
+			close(s.done)
+		}
+	}
+	return newServer, nil
 }
 
 func (s *Server) HandleClient(conn net.Conn) {

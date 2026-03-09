@@ -6,32 +6,23 @@
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/SunBK201/UA3F/total?label=GitHub%20Downloads&link=https%3A%2F%2Fgithub.com%2FSunBK201%2FUA3F%2Freleases)
 [![Telegram group](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.swo.moe%2Fstats%2Ftelegram%2Fcrack_campus_network&query=count&color=2CA5E0&label=Telegram%20Group&logo=telegram&cacheSeconds=3600)](https://t.me/crack_campus_network)
 
+<img align="right" src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-210.png" alt="UA3F" width="300">
+
 English | [简体中文](README.md)
 
-UA3F is an HTTP rewriting tool that transparently rewrites HTTP (e.g., User-Agent) as an HTTP, SOCKS5, TPROXY, REDIRECT, or NFQUEUE server.
+UA3F is an HTTP(S) rewriting tool that transparently rewrites HTTP(S) (e.g., User-Agent) as an HTTP, SOCKS5, TPROXY, REDIRECT, or NFQUEUE server.
 
-## Features
-
-- Supports bidirectional rewriting of HTTP Headers and Body
-- Supports HTTP URL redirection: 302, 307, Header
+- Supports bidirectional rewriting of HTTP(S) Headers and Body
+- Supports HTTP(S) URL redirection: 302, 307, Header
+- Supports HTTPS MitM traffic decryption and rewriting
 - Multiple server modes: HTTP, SOCKS5, TPROXY, REDIRECT, NFQUEUE([UA2F](https://github.com/Zxilly/UA2F))
 - Highly flexible rewriting rule system with multiple rule types and rewriting strategies
 - Real-time statistics dashboard with traffic modification monitoring and analysis
 - Multiple deployment options: opkg installation, compilation, and Docker deployment
 - Compatible with Clash Fake-IP & Redir-Host modes for coexistence
 - Supports TTL, TCP Timestamp, TCP Window and IP ID obfuscation
-- Supports TCP Desync fragment reordering to evade Deep Packet Inspection (DPI)
-
-<div align="center">
-<img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-210.png" alt="UA3F" style="width:40%;">
-</div>
-
-<table>
-  <tr>
-    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-270-luci.png" alt="UA3F-LuCI"></td>
-    <td><img src="https://sunbk201.oss-cn-beijing.aliyuncs.com/img/ua3f-270-rule.png" alt="UA3F-Rules"></td>
-  </tr>
-</table>
+- Supports Desync fragment reordering and obfuscation to evade Deep Packet Inspection (DPI)
+- Supports eBPF offloading for accelerated forwarding performance
 
 ## Deployment
 
@@ -60,6 +51,7 @@ Four deployment methods are available:
   ```
 
 - **Binary Download**
+
   Pre-compiled binaries for common architectures are available on the [Release](https://github.com/SunBK201/UA3F/releases) page. Download the appropriate binary for your device architecture.
 
 ## Usage
@@ -137,6 +129,7 @@ Rule Types:
 | DOMAIN         | Match based on domain name                        |
 | DOMAIN-SUFFIX  | Match based on domain suffix                      |
 | DOMAIN-KEYWORD | Match based on domain keyword                     |
+| DOMAIN-SET     | Match based on a set of domain names              |
 | IP-CIDR        | Match based on IP address range                   |
 | SRC-IP         | Match based on source IP address                  |
 | DST-PORT       | Match based on destination port                   |
@@ -153,6 +146,7 @@ Rewrite Actions:
 | ADD           | Add the specified header with the given content               |
 | REPLACE       | Replace the specified header with the given content           |
 | REPLACE-REGEX | Replace the part of the specified header that matches a regex |
+| REJECT        | Reject the request                                            |
 | DROP          | Drop the request                                              |
 
 URL Redirection Actions:
@@ -166,10 +160,10 @@ URL Redirection Actions:
 
 See [Clash Configuration](docs/clash/Clash.md)
 
-## References & Thanks
+## Credits
 
-- [UA2F](https://github.com/Zxilly/UA2F)
-- [uaProxy](https://github.com/huhu415/uaProxy)
-- [xmurp-ua](https://github.com/CHN-beta/xmurp-ua)
-- [Clash](https://github.com/Dreamacro/clash)
-- [mihomo](https://github.com/MetaCubeX/mihomo)
+- [Zxilly/UA2F](https://github.com/Zxilly/UA2F)
+- [huhu415/uaProxy](https://github.com/huhu415/uaProxy)
+- [CHN-beta/xmurp-ua](https://github.com/CHN-beta/xmurp-ua)
+- [Dreamacro/clash](https://github.com/Dreamacro/clash)
+- [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo)

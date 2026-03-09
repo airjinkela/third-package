@@ -37,6 +37,7 @@ const uciglobal = 'global',
 const ucisniff = 'sniff',
       ucidnser = 'dns_server',
       ucidnspoli = 'dns_policy',
+      ucidnsnpoli = 'dns_node_policy',
       ucipgrp = 'proxy_group',
       ucinode = 'node',
       uciprov = 'provider',
@@ -255,7 +256,6 @@ config["geo-auto-update"] = false;
 
 /* TLS START */
 /* TLS settings */
-config["global-client-fingerprint"] = uci.get(uciconf, ucitls, 'global_client_fingerprint');
 config.tls = {
 	"certificate": uci.get(uciconf, ucitls, 'tls_cert_path'),
 	"private-key": uci.get(uciconf, ucitls, 'tls_key_path'),
@@ -359,10 +359,8 @@ push(config.listeners, {
 }); // @Not required for v1.19.2+
 /* Tun settings */
 if (match(proxy_mode, /tun/))
-	push(config.listeners, {
-		name: 'tun-in',
-		type: 'tun',
-
+	config.tun = {
+		enable: true,
 		device: tun_name,
 		stack: uci.get(uciconf, uciinbound, 'tun_stack') || 'system',
 		"dns-hijack": ['udp://[::]:53', 'tcp://[::]:53'],
@@ -396,7 +394,7 @@ if (match(proxy_mode, /tun/))
 		"endpoint-independent-nat": strToBool(uci.get(uciconf, uciinbound, 'tun_endpoint_independent_nat')),
 		"disable-icmp-forwarding": (uci.get(uciconf, uciinbound, 'tun_disable_icmp_forwarding') === '0') ? false : true,
 		"auto-detect-interface": true
-	});
+	};
 /* Inbound END */
 
 /* DNS START */
@@ -412,6 +410,7 @@ config.dns = {
 	"respect-rules": true,
 	"default-nameserver": get_nameserver(uci.get(uciconf, ucidns, 'boot_server')),
 	"proxy-server-nameserver": get_nameserver(uci.get(uciconf, ucidns, 'bootnode_server')),
+	"proxy-server-nameserver-policy": {},
 	nameserver: get_nameserver(uci.get(uciconf, ucidns, 'default_server')),
 	fallback: get_nameserver(uci.get(uciconf, ucidns, 'fallback_server')),
 	"nameserver-policy": {},
@@ -420,23 +419,31 @@ config.dns = {
 	}
 };
 /* DNS policy */
-uci.foreach(uciconf, ucidnspoli, (cfg) => {
-	if (cfg.enabled === '0')
-		return null;
+map([
+		[ucidnspoli, "nameserver-policy"],              // DNS policy
+		[ucidnsnpoli, "proxy-server-nameserver-policy"] // Bootstrap DNS policy (Node)
+	], (e) => {
+	const sectiontype = e[0];
+	const field = e[1];
 
-	let key;
-	if (cfg.type === 'domain') {
-		key = isEmpty(cfg.domain) ? null : join(',', cfg.domain);
-	} else if (cfg.type === 'geosite') {
-		key = isEmpty(cfg.geosite) ? null : 'geosite:' + join(',', cfg.geosite);
-	} else if (cfg.type === 'rule_set') {
-		key = isEmpty(cfg.rule_set) ? null : 'rule-set:' + join(',', cfg.rule_set);
-	};
+	uci.foreach(uciconf, sectiontype, (cfg) => {
+		if (cfg.enabled === '0')
+			return null;
 
-	if (!key)
-		return null;
+		let key;
+		if (cfg.type === 'domain') {
+			key = isEmpty(cfg.domain) ? null : join(',', cfg.domain);
+		} else if (cfg.type === 'geosite') {
+			key = isEmpty(cfg.geosite) ? null : 'geosite:' + join(',', cfg.geosite);
+		} else if (cfg.type === 'rule_set') {
+			key = isEmpty(cfg.rule_set) ? null : 'rule-set:' + join(',', cfg.rule_set);
+		};
 
-	config.dns["nameserver-policy"][key] = get_nameserver(cfg.server, cfg.proxy);
+		if (!key)
+			return null;
+
+		config.dns[field][key] = get_nameserver(cfg.server, cfg.proxy);
+	});
 });
 /* Fallback filter */
 if (!isEmpty(config.dns.fallback))
@@ -489,16 +496,24 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"routing-mark": strToInt(cfg.routing_mark) || null,
 		"ip-version": cfg.ip_version,
 
-		/* HTTP / SOCKS / Shadowsocks / VMess / VLESS / Trojan / hysteria2 / TUIC / SSH / WireGuard */
+		/* HTTP / SOCKS / Shadowsocks / VMess / VLESS / Trojan / hysteria2 / TUIC / SSH / WireGuard / Masque */
 		username: cfg.username,
 		uuid: cfg.vmess_uuid || cfg.uuid,
 		cipher: cfg.vmess_chipher || cfg.shadowsocks_chipher,
 		password: cfg.shadowsocks_password || cfg.password,
 		headers: cfg.headers ? json(cfg.headers) : null,
-		"private-key": cfg.wireguard_private_key || cfg.ssh_priv_key,
+		"congestion-controller": cfg.tuic_congestion_controller || cfg.masque_congestion_controller,
+		"private-key": cfg.masque_private_key || cfg.wireguard_private_key || cfg.ssh_priv_key,
+		"public-key": cfg.masque_endpoint_public_key || cfg.wireguard_peer_public_key,
+		ip: cfg.masque_ip || cfg.wireguard_ip,
+		ipv6: cfg.masque_ipv6 || cfg.wireguard_ipv6,
+		mtu: strToInt(cfg.masque_mtu ?? cfg.wireguard_mtu) || null,
+		"remote-dns-resolve": strToBool(cfg.masque_remote_dns_resolve ?? cfg.wireguard_remote_dns_resolve),
+		dns: cfg.masque_dns || cfg.wireguard_dns,
 
 		/* Hysteria / Hysteria2 */
 		ports: isEmpty(cfg.hysteria_ports) ? null : join(',', cfg.hysteria_ports),
+		"hop-interval": strToInt(cfg.hysteria_hop_interval),
 		up: cfg.hysteria_up_mbps ? cfg.hysteria_up_mbps + ' Mbps' : null,
 		down: cfg.hysteria_down_mbps ? cfg.hysteria_down_mbps + ' Mbps' : null,
 		obfs: cfg.hysteria_obfs_type,
@@ -529,6 +544,7 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"http-mask-mode": cfg.sudoku_http_mask_mode,
 		"http-mask-tls": strToBool(cfg.sudoku_http_mask_tls),
 		"http-mask-host": cfg.sudoku_http_mask_host,
+		"path-root": cfg.sudoku_path_root,
 		"http-mask-multiplex": cfg.sudoku_http_mask_multiplex,
 
 		/* Snell */
@@ -541,7 +557,6 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 
 		/* TUIC */
 		ip: cfg.tuic_ip,
-		"congestion-controller": cfg.tuic_congestion_controller,
 		"udp-relay-mode": cfg.tuic_udp_relay_mode,
 		"udp-over-stream": strToBool(cfg.tuic_udp_over_stream),
 		"udp-over-stream-version": cfg.tuic_udp_over_stream_version,
@@ -573,15 +588,10 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		encryption: cfg.vless_encryption === '1' ? cfg.vless_encryption_encryption : null,
 
 		/* WireGuard */
-		ip: cfg.wireguard_ip,
-		ipv6: cfg.wireguard_ipv6,
-		"public-key": cfg.wireguard_peer_public_key,
 		"pre-shared-key": cfg.wireguard_pre_shared_key,
 		"allowed-ips": cfg.wireguard_allowed_ips,
 		reserved: cfg.wireguard_reserved,
-		mtu: strToInt(cfg.wireguard_mtu) || null,
-		"remote-dns-resolve": strToBool(cfg.wireguard_remote_dns_resolve),
-		dns: cfg.wireguard_dns,
+		"persistent-keepalive": strToInt(cfg.wireguard_persistent_keepalive),
 
 		/* Plugin fields */
 		plugin: cfg.plugin,
@@ -611,7 +621,8 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"client-fingerprint": cfg.tls_client_fingerprint,
 		"ech-opts": cfg.tls_ech === '1' ? {
 			enable: true,
-			config: cfg.tls_ech_config
+			config: cfg.tls_ech_config,
+			"query-server-name": cfg.tls_ech_query_server_name
 		} : null,
 		"reality-opts": cfg.tls_reality === '1' ? {
 			"public-key": cfg.tls_reality_public_key,
@@ -633,7 +644,8 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 				path: cfg.transport_path || '/',
 			} : null,
 			"grpc-opts": cfg.transport_type === 'grpc' ? {
-				"grpc-service-name": cfg.transport_grpc_servicename
+				"grpc-service-name": cfg.transport_grpc_servicename,
+				"grpc-user-agent": cfg.transport_grpc_user_agent
 			} : null,
 			"ws-opts": cfg.transport_type === 'ws' ? {
 				path: cfg.transport_path || '/',
@@ -738,7 +750,7 @@ uci.foreach(uciconf, uciprov, (cfg) => {
 			override: {
 				"additional-prefix": cfg.override_prefix,
 				"additional-suffix": cfg.override_suffix,
-				"proxy-name": isEmpty(cfg.override_replace) ? null : map(cfg.override_replace, (obj) => json(obj)),
+				"proxy-name": isEmpty(cfg.override_replace) ? null : map(cfg.override_replace, obj => json(obj)),
 				// Configuration Items
 				tfo: strToBool(cfg.override_tfo),
 				mptcp: strToBool(cfg.override_mptcp),
@@ -779,7 +791,8 @@ uci.foreach(uciconf, ucirule, (cfg) => {
 			url: cfg.url,
 			"size-limit": bytesizeToByte(cfg.size_limit) || null,
 			interval: (cfg.type === 'http') ? durationToSecond(cfg.interval) ?? 259200 : null,
-			proxy: get_proxygroup(cfg.proxy)
+			proxy: get_proxygroup(cfg.proxy),
+			header: cfg.header ? json(cfg.header) : null
 		})
 	};
 });

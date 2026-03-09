@@ -27,6 +27,13 @@ modem_settings()
 		uci set qmodem.pcie0.alias="wwan1"
 		uci commit qmodem
 		;;
+	alwaylink,m60k63|\
+	feiyan,m60k63)
+		#usb slot 2-1
+		add_usb_slot_cfg "wwan0" "2-1" "wwan0" "" "" "5g-power" "0" "1" "5"\
+		#set led script
+		uci set qmodem.wwan0.led_script="m60k63"
+		;;
 	hiveton,h5000m)
 		#usb slot
 		uci set qmodem.usb0="modem-slot"
@@ -53,6 +60,9 @@ modem_settings()
 		uci set qmodem.m2_u3.type="usb"
 		uci set qmodem.m2_u3.ethernet_5g="cpewan0"
 		uci commit qmodem
+		;;
+	huasifei,wh3000-pro)
+		add_usb_slot_cfg "5g0" "2-1.4" "wwan0" "" "" "modem_power" "0" "1" "6"
 		;;
 	huasifei,ws1610)
 		#m2 usb3.0 
@@ -98,6 +108,10 @@ modem_settings()
 		add_usb_slot_cfg "4g1" "1-1.4" "4g3" "green:network2" "" "" "" "" "21"
 		#(slot 3)
 		add_usb_slot_cfg "4g2" "1-1.1" "4g4" "green:network3" "" "" "" "" "22"
+		uci commit qmodem
+		;;
+	p2w,r619ac*)
+		add_usb_slot_cfg "minipcie" "3-1" "wwan0" "blue:power" "" "" "" "" "10"
 		uci commit qmodem
 		;;
 	sagemcom,5866t)

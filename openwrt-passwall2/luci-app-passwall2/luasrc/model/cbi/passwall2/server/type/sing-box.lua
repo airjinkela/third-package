@@ -8,9 +8,6 @@ if not singbox_bin then
 	return
 end
 
-local local_version = api.get_app_version("sing-box")
-local version_ge_1_12_0 = api.compare_versions(local_version:match("[^v]+"), ">=", "1.12.0")
-
 local fs = api.fs
 
 local singbox_tags = luci.sys.exec(singbox_bin .. " version  | grep 'Tags:' | awk '{print $2}'")
@@ -55,9 +52,7 @@ end
 if singbox_tags:find("with_quic") then
 	o:value("hysteria2", "Hysteria2")
 end
-if version_ge_1_12_0 then
-	o:value("anytls", "AnyTLS")
-end
+o:value("anytls", "AnyTLS")
 o:value("direct", "Direct")
 o:depends({ [_n("custom")] = false })
 
@@ -171,7 +166,7 @@ if singbox_tags:find("with_quic") then
 	o:depends({ [_n("protocol")] = "hysteria2" })
 
 	o = s:option(Value, _n("hysteria2_obfs_password"), translate("Obfs Password"))
-	o:depends({ [_n("protocol")] = "hysteria2" })
+	o:depends({ [_n("hysteria2_obfs_type")] = "salamander" })
 
 	o = s:option(Value, _n("hysteria2_auth_password"), translate("Auth Password"))
 	o.password = true
@@ -326,14 +321,6 @@ o.validate = function(self, value)
 	return value
 end
 
-o = s:option(Flag, _n("pq_signature_schemes_enabled"), translate("PQ signature schemes"))
-o.default = "0"
-o:depends({ [_n("ech")] = true })
-
-o = s:option(Flag, _n("dynamic_record_sizing_disabled"), translate("Disable adaptive sizing of TLS records"))
-o.default = "0"
-o:depends({ [_n("ech")] = true })
-
 o = s:option(ListValue, _n("transport"), translate("Transport"))
 o:value("tcp", "TCP")
 o:value("http", "HTTP")
@@ -457,7 +444,7 @@ o.validate = function(self, value, t)
 	if value and api.jsonc.parse(value) then
 		return value
 	else
-		return nil, translate("Must be JSON text!")
+		return nil, translate("Custom Config") .. " " .. translate("Must be JSON text!")
 	end
 end
 o.custom_cfgvalue = function(self, section, value)
@@ -467,7 +454,7 @@ o.custom_cfgvalue = function(self, section, value)
 	end
 end
 o.custom_write = function(self, section, value)
-	m:set(section, "config_str", api.base64Encode(value))
+	m:set(section, "config_str", api.base64Encode(value) or "")
 end
 
 o = s:option(Flag, _n("log"), translate("Log"))

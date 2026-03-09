@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.21-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -9,6 +9,8 @@ COPY src/ ./
 ARG TARGETOS
 ARG TARGETARCH
 
+RUN apk add --no-cache llvm clang linux-headers libbpf-dev
+RUN go generate ./...
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o ua3f
 
 FROM --platform=$BUILDPLATFORM alpine

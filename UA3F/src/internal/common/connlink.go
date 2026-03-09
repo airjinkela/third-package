@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"syscall"
 
 	"github.com/sunbk201/ua3f/internal/sniff"
 )
@@ -13,14 +14,20 @@ import (
 type ConnLink struct {
 	LConn    net.Conn
 	RConn    net.Conn
-	LAddr    string
-	RAddr    string
-	Skipped  bool
-	Protocol sniff.Protocol
 	Metadata *Metadata
 
 	SniffDone *sync.WaitGroup // For waiting ProcessLR First Sniff
 	SniffOnce sync.Once       // Ensures SniffDone.Done() is called only once
+	Protocol  sniff.Protocol
+
+	LAddr string
+	RAddr string
+
+	lcookie uint64 // BPF cookie for L side
+	rcookie uint64 // BPF cookie for R side
+
+	Skipped   bool
+	Offloaded bool // whether this ConnLink is offloaded to BPF sockmap
 }
 
 var one = make([]byte, 1)
@@ -61,6 +68,22 @@ func (c *ConnLink) RPort() string {
 	return ""
 }
 
+func (c *ConnLink) LFD() (int, error) {
+	fd, err := sockFd(c.LConn)
+	if err != nil {
+		return 0, err
+	}
+	return int(fd), nil
+}
+
+func (c *ConnLink) RFD() (int, error) {
+	fd, err := sockFd(c.RConn)
+	if err != nil {
+		return 0, err
+	}
+	return int(fd), nil
+}
+
 func (c *ConnLink) CopyLR() {
 	defer func() {
 		if tc, ok := c.LConn.(*net.TCPConn); ok {
@@ -74,7 +97,8 @@ func (c *ConnLink) CopyLR() {
 			_ = c.RConn.Close()
 		}
 	}()
-	_, _ = io.CopyBuffer(c.RConn, c.LConn, one)
+	n, _ := io.CopyBuffer(c.RConn, c.LConn, one)
+	slog.Debug("CopyLR done", slog.Int64("bytes", n), slog.Any("ConnLink", c))
 }
 
 func (c *ConnLink) CopyRL() {
@@ -90,7 +114,8 @@ func (c *ConnLink) CopyRL() {
 			_ = c.LConn.Close()
 		}
 	}()
-	_, _ = io.CopyBuffer(c.LConn, c.RConn, one)
+	n, _ := io.CopyBuffer(c.LConn, c.RConn, one)
+	slog.Debug("CopyRL done", slog.Int64("bytes", n), slog.Any("ConnLink", c))
 }
 
 func (c *ConnLink) CloseLR() error {
@@ -146,34 +171,41 @@ func (c *ConnLink) LogValue() slog.Value {
 	)
 }
 
-func (c *ConnLink) LogDebug(msg string) {
-	slog.Debug(msg, "ConnLink", c)
-}
+// sockFd returns the underlying OS descriptor for conn.
+//   - Unix: file descriptor (fd)
+//   - Windows: SOCKET handle
+//
+// The returned uintptr is only valid while conn is alive.
+// Do NOT close it yourself.
+func sockFd(conn net.Conn) (uintptr, error) {
+	for i := 0; i < 8 && conn != nil; i++ {
+		if sc, ok := conn.(syscall.Conn); ok {
+			rc, err := sc.SyscallConn()
+			if err != nil {
+				return 0, err
+			}
 
-func (c *ConnLink) LogInfo(msg string) {
-	slog.Info(msg, "ConnLink", c)
-}
+			var fd uintptr
+			if err := rc.Control(func(u uintptr) {
+				fd = u
+			}); err != nil {
+				return 0, err
+			}
+			return fd, nil
+		}
 
-func (c *ConnLink) LogWarn(msg string) {
-	slog.Warn(msg, "ConnLink", c)
-}
+		type netConner interface{ NetConn() net.Conn }
+		if nc, ok := conn.(netConner); ok {
+			next := nc.NetConn()
+			if next == conn {
+				break
+			}
+			conn = next
+			continue
+		}
 
-func (c *ConnLink) LogError(msg string) {
-	slog.Error(msg, "ConnLink", c)
-}
+		break
+	}
 
-func (c *ConnLink) LogDebugf(format string, args ...interface{}) {
-	c.LogDebug(fmt.Sprintf(format, args...))
-}
-
-func (c *ConnLink) LogInfof(format string, args ...interface{}) {
-	c.LogInfo(fmt.Sprintf(format, args...))
-}
-
-func (c *ConnLink) LogWarnf(format string, args ...interface{}) {
-	c.LogWarn(fmt.Sprintf(format, args...))
-}
-
-func (c *ConnLink) LogErrorf(format string, args ...interface{}) {
-	c.LogError(fmt.Sprintf(format, args...))
+	return 0, fmt.Errorf("conn type %T does not expose syscall.Conn/SyscallConn", conn)
 }

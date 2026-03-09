@@ -73,12 +73,34 @@
 			"acl": [ "luci-app-qmodem-next" ]
 		}
 	},
+	"admin/modem/qmodem/sms_sim": {
+		"title": "SIM Card SMS",
+		"order": 5.3,
+		"action": {
+			"type": "view",
+			"path": "qmodem/sms_sim"
+		},
+		"depends": {
+			"acl": [ "luci-app-qmodem-next" ]
+		}
+	},
 	"admin/modem/qmodem/sms_forward": {
 		"title": "SMS Forwarder",
 		"order": 5.5,
 		"action": {
 			"type": "view",
 			"path": "qmodem/sms_forward"
+		},
+		"depends": {
+			"acl": [ "luci-app-qmodem-next" ]
+		}
+	},
+	"admin/modem/qmodem/sim_switch": {
+		"title": "SIM Switch",
+		"order": 5.6,
+		"action": {
+			"type": "view",
+			"path": "qmodem/sim_switch"
 		},
 		"depends": {
 			"acl": [ "luci-app-qmodem-next" ]

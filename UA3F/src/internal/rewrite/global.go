@@ -13,17 +13,15 @@ import (
 )
 
 type GlobalRewriter struct {
-	UserAgent      string
-	uaRegex        *regexp2.Regexp
-	partialReplace bool
+	Recorder       *statistics.Recorder
 	rewriteAction  common.Action
-
-	whitelist []string
-
-	Recorder *statistics.Recorder
+	uaRegex        *regexp2.Regexp
+	UserAgent      string
+	whitelist      []string
+	partialReplace bool
 }
 
-func (r *GlobalRewriter) RewriteRequest(metadata *common.Metadata) (decision *RewriteDecision) {
+func (r *GlobalRewriter) RewriteRequest(metadata *common.Metadata) (decision *common.RewriteDecision) {
 	defer func() {
 		_, err := decision.Action.Execute(metadata)
 		if err != nil {
@@ -35,7 +33,7 @@ func (r *GlobalRewriter) RewriteRequest(metadata *common.Metadata) (decision *Re
 	ua := metadata.UserAgent()
 	log.LogInfoWithAddr(metadata.SrcAddr(), metadata.DestAddr(), fmt.Sprintf("Original User-Agent: (%s)", ua))
 
-	decision = &RewriteDecision{
+	decision = &common.RewriteDecision{
 		Action: action.DirectAction,
 	}
 
@@ -75,8 +73,8 @@ func (r *GlobalRewriter) RewriteRequest(metadata *common.Metadata) (decision *Re
 	return decision
 }
 
-func (r *GlobalRewriter) RewriteResponse(metadata *common.Metadata) (decision *RewriteDecision) {
-	return &RewriteDecision{
+func (r *GlobalRewriter) RewriteResponse(metadata *common.Metadata) (decision *common.RewriteDecision) {
+	return &common.RewriteDecision{
 		Action: action.DirectAction,
 	}
 }
@@ -87,6 +85,18 @@ func (r *GlobalRewriter) ServeRequest() bool {
 
 func (r *GlobalRewriter) ServeResponse() bool {
 	return false
+}
+
+func (r *GlobalRewriter) HeaderRules() []common.Rule {
+	return nil
+}
+
+func (r *GlobalRewriter) BodyRules() []common.Rule {
+	return nil
+}
+
+func (r *GlobalRewriter) RedirectRules() []common.Rule {
+	return nil
 }
 
 func (r *GlobalRewriter) inWhitelist(ua string) bool {

@@ -6,25 +6,7 @@ import (
 	"github.com/sunbk201/ua3f/internal/statistics"
 )
 
-type Rewriter interface {
-	RewriteRequest(metadata *common.Metadata) (decision *RewriteDecision)
-	RewriteResponse(metadata *common.Metadata) (decision *RewriteDecision)
-	ServeRequest() bool
-	ServeResponse() bool
-}
-
-type RewriteDecision struct {
-	Action      common.Action
-	MatchedRule common.Rule
-	NeedCache   bool
-	NeedSkip    bool
-	Redirect    bool // URL Redirect
-
-	Modified bool // NFQUEUE
-	HasUA    bool // NFQUEUE
-}
-
-func New(cfg *config.Config, recorder *statistics.Recorder) (Rewriter, error) {
+func New(cfg *config.Config, recorder *statistics.Recorder) (common.Rewriter, error) {
 	if cfg.ServerMode == config.ServerModeNFQueue {
 		return NewPacketRewriter(cfg, recorder)
 	}

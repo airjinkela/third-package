@@ -11,6 +11,7 @@ local trojan_type = {}
 local vmess_type = {}
 local vless_type = {}
 local hysteria2_type = {}
+local xray_version = api.get_app_version("xray")
 if has_ss then
 	local s = "shadowsocks-libev"
 	table.insert(ss_type, s)
@@ -33,6 +34,9 @@ if has_xray then
 	table.insert(ss_type, s)
 	table.insert(vmess_type, s)
 	table.insert(vless_type, s)
+	if api.compare_versions(xray_version, ">=", "26.1.13") then
+		table.insert(hysteria2_type, s)
+	end
 end
 if has_hysteria2 then
 	local s = "hysteria2"
@@ -42,32 +46,15 @@ end
 m = Map(appname)
 api.set_apply_on_parse(m)
 
-if api.is_js_luci() then
-	m.on_after_apply = function(self)
-		uci:foreach(appname, "subscribe_list", function(e)
-			uci:delete(appname, e[".name"], "md5")
-		end)
-		uci:commit(appname)
-	end
-end
-
-m.render = function(self, ...)
-	Map.render(self, ...)
-	api.optimize_cbi_ui()
+function m.on_before_save(self)
+	self.uci:foreach(appname, "subscribe_list", function(e)
+		self:del(e[".name"], "md5")
+	end)
 end
 
 -- [[ Subscribe Settings ]]--
 s = m:section(TypedSection, "global_subscribe", "")
 s.anonymous = true
-
-function m.commit_handler(self)
-	if self.no_commit then
-		return
-	end
-	self.uci:foreach(appname, "subscribe_list", function(e)
-		self:del(e[".name"], "md5")
-	end)
-end
 
 o = s:option(ListValue, "filter_keyword_mode", translate("Filter keyword Mode"))
 o:value("0", translate("Close"))
@@ -82,6 +69,7 @@ o = s:option(DynamicList, "filter_keep_list", translate("Keep List"))
 
 if #ss_type > 0 then
 	o = s:option(ListValue, "ss_type", translatef("%s Node Use Type", "Shadowsocks"))
+	o:value("", translate("Auto"))
 	for key, value in pairs(ss_type) do
 		o:value(value)
 	end
@@ -89,6 +77,7 @@ end
 
 if #trojan_type > 0 then
 	o = s:option(ListValue, "trojan_type", translatef("%s Node Use Type", "Trojan"))
+	o:value("", translate("Auto"))
 	for key, value in pairs(trojan_type) do
 		o:value(value)
 	end
@@ -96,31 +85,25 @@ end
 
 if #vmess_type > 0 then
 	o = s:option(ListValue, "vmess_type", translatef("%s Node Use Type", "VMess"))
+	o:value("", translate("Auto"))
 	for key, value in pairs(vmess_type) do
 		o:value(value)
-	end
-	if has_xray then
-		o.default = "xray"
 	end
 end
 
 if #vless_type > 0 then
 	o = s:option(ListValue, "vless_type", translatef("%s Node Use Type", "VLESS"))
+	o:value("", translate("Auto"))
 	for key, value in pairs(vless_type) do
 		o:value(value)
-	end
-	if has_xray then
-		o.default = "xray"
 	end
 end
 
 if #hysteria2_type > 0 then
 	o = s:option(ListValue, "hysteria2_type", translatef("%s Node Use Type", "Hysteria2"))
+	o:value("", translate("Auto"))
 	for key, value in pairs(hysteria2_type) do
 		o:value(value)
-	end
-	if has_hysteria2 then
-		o.default = "hysteria2"
 	end
 end
 
@@ -192,6 +175,18 @@ o.write = function(self, section, value)
 			if e["group"] and e["group"]:lower() == old:lower() then
 				m.uci:set(appname, e[".name"], "group", value)
 			end
+			if e["protocol"] and (e["protocol"] == "_balancing" or e["protocol"] == "_urltest") and e["node_group"] then
+				local gs = ""
+				for g in e["node_group"]:gmatch("%S+") do
+					if api.UrlEncode(old) == g then
+						gs = gs .. " " .. api.UrlEncode(value)
+					else
+						gs = gs .. " " .. g
+					end
+				end
+				gs = api.trim(gs)
+				m.uci:set(appname, e[".name"], "node_group", gs)
+			end
 		end)
 	end
 	return Value.write(self, section, value)
@@ -237,6 +232,6 @@ o.cfgvalue = function(self, section)
 	section, translate("Manual subscription"))
 end
 
-s:append(Template(appname .. "/node_subscribe/js"))
+m:append(Template(appname .. "/node_subscribe/js"))
 
 return m
