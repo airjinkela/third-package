@@ -463,6 +463,7 @@ get_rat()
 		"2"|"4"|"5"|"6"|"9"|"10") rat="WCDMA" ;;
         "7") rat="LTE" ;;
         "11"|"12") rat="NR" ;;
+        "13") rat="LTE-NR" ;;
 	esac
     echo "${rat}"
 }
@@ -489,7 +490,7 @@ get_connect_status()
         result=`at  $at_port $at_cmd | grep $expect|tr '\r' '\n'`
         # for fm350 pdp_index 0, GGACT will return empty,so we need to add it manually
         if [ -z "$result" ]; then
-            case $manufacturer in
+            case $vendor in
                 "fibocom")
                     case $platform in
                         "mediatek")
@@ -703,6 +704,24 @@ set_sms_storage()
 
 get_sim_switch_capabilities(){
     json_add_string "supportSwitch" "0"
+}
+
+get_usage_stats()
+{
+    json_add_boolean "available" 0
+    json_add_int "updated_at" 0
+    json_add_int "total_rx_bytes" 0
+    json_add_int "total_tx_bytes" 0
+}
+
+write_usage_stats()
+{
+    return 1
+}
+
+clear_usage_stats()
+{
+    json_add_boolean "result" 0
 }
 
 get_global_disabled_features()

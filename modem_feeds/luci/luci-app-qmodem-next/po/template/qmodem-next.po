@@ -31,17 +31,17 @@ msgstr ""
 msgid "%d messages deleted, %d failed"
 msgstr ""
 
-#: view/qmodem/network_config.js:498
-#: view/qmodem/network_config.js:507
-#: view/qmodem/network_config.js:516
-#: view/qmodem/network_config.js:523
+#: view/qmodem/network_config.js:508
+#: view/qmodem/network_config.js:517
+#: view/qmodem/network_config.js:526
+#: view/qmodem/network_config.js:533
 msgid "(beta)"
 msgstr ""
 
-#: view/qmodem/network_config.js:499
-#: view/qmodem/network_config.js:508
-#: view/qmodem/network_config.js:517
-#: view/qmodem/network_config.js:524
+#: view/qmodem/network_config.js:509
+#: view/qmodem/network_config.js:518
+#: view/qmodem/network_config.js:527
+#: view/qmodem/network_config.js:534
 msgid "(still in beta)"
 msgstr ""
 
@@ -59,8 +59,8 @@ msgstr ""
 msgid "7-bit (ASCII)"
 msgstr ""
 
-#: view/qmodem/network_config.js:388
-#: view/qmodem/network_config.js:465
+#: view/qmodem/network_config.js:398
+#: view/qmodem/network_config.js:475
 msgid "A1 (AT)"
 msgstr ""
 
@@ -72,8 +72,8 @@ msgstr ""
 msgid "API configuration saved. Remember to save & apply changes."
 msgstr ""
 
-#: view/qmodem/network_config.js:370
-#: view/qmodem/network_config.js:446
+#: view/qmodem/network_config.js:380
+#: view/qmodem/network_config.js:456
 msgid "APN"
 msgstr ""
 
@@ -97,17 +97,17 @@ msgstr ""
 #: vendor/neoway.sh:161
 #: vendor/quectel.sh:363
 #: vendor/sierra.sh:215
-#: vendor/simcom.sh:245
+#: vendor/simcom.sh:269
 #: vendor/telit.sh:164
 #: view/qmodem/settings.js:308
 msgid "AT Port"
 msgstr ""
 
-#: view/qmodem/network_config.js:517
+#: view/qmodem/network_config.js:527
 msgid "AT commands to execute after modem initialization."
 msgstr ""
 
-#: view/qmodem/network_config.js:524
+#: view/qmodem/network_config.js:534
 msgid "AT commands to execute before dialing."
 msgstr ""
 
@@ -120,8 +120,8 @@ msgstr ""
 #: vendor/huawei.sh:514
 #: vendor/neoway.sh:719
 #: vendor/neoway.sh:774
-#: vendor/simcom.sh:930
-#: vendor/simcom.sh:970
+#: vendor/simcom.sh:1179
+#: vendor/simcom.sh:1219
 #: vendor/telit.sh:763
 msgid "Absolute Radio-Frequency Channel Number"
 msgstr ""
@@ -222,7 +222,7 @@ msgstr ""
 msgid "Are you sure you want to change the IMEI to %s? This requires modem reboot."
 msgstr ""
 
-#: view/qmodem/network_config.js:980
+#: view/qmodem/network_config.js:990
 msgid "Are you sure you want to clear the dial log?"
 msgstr ""
 
@@ -246,7 +246,7 @@ msgstr ""
 msgid "Are you sure you want to remove this modem device? this cannot be roll back with uci machanism."
 msgstr ""
 
-#: view/qmodem/settings.js:461
+#: view/qmodem/settings.js:471
 msgid "Associated USB"
 msgstr ""
 
@@ -258,14 +258,14 @@ msgstr ""
 msgid "Attempt to use pre-configured USB settings from the CPE vendor."
 msgstr ""
 
-#: view/qmodem/network_config.js:414
+#: view/qmodem/network_config.js:424
 msgid "Authentication Type"
 msgstr ""
 
-#: view/qmodem/network_config.js:371
-#: view/qmodem/network_config.js:374
-#: view/qmodem/network_config.js:448
-#: view/qmodem/network_config.js:451
+#: view/qmodem/network_config.js:381
+#: view/qmodem/network_config.js:384
+#: view/qmodem/network_config.js:458
+#: view/qmodem/network_config.js:461
 msgid "Auto Choose"
 msgstr ""
 
@@ -312,9 +312,9 @@ msgstr ""
 #: vendor/neoway.sh:731
 #: vendor/neoway.sh:756
 #: vendor/neoway.sh:775
-#: vendor/simcom.sh:931
-#: vendor/simcom.sh:953
-#: vendor/simcom.sh:971
+#: vendor/simcom.sh:1180
+#: vendor/simcom.sh:1202
+#: vendor/simcom.sh:1220
 #: vendor/telit.sh:761
 #: view/qmodem/config_advanced.js:754
 msgid "Band"
@@ -340,13 +340,13 @@ msgstr ""
 #: vendor/neoway.sh:157
 #: vendor/quectel.sh:359
 #: vendor/sierra.sh:211
-#: vendor/simcom.sh:241
+#: vendor/simcom.sh:265
 #: vendor/telit.sh:160
 msgid "Base Information"
 msgstr ""
 
-#: view/qmodem/network_config.js:405
-#: view/qmodem/network_config.js:482
+#: view/qmodem/network_config.js:415
+#: view/qmodem/network_config.js:492
 msgid "Beeline (RU)"
 msgstr ""
 
@@ -362,7 +362,12 @@ msgstr ""
 msgid "Bridge Mode"
 msgstr ""
 
-#: view/qmodem/network_config.js:985
+#: view/qmodem/network_config.js:334
+#: view/qmodem/settings.js:461
+msgid "Bridge Port"
+msgstr ""
+
+#: view/qmodem/network_config.js:995
 #: view/qmodem/settings.js:239
 #: view/qmodem/sms.js:560
 #: view/qmodem/sms_forward.js:303
@@ -375,7 +380,7 @@ msgstr ""
 msgid "Carrier"
 msgstr ""
 
-#: view/qmodem/network_config.js:347
+#: view/qmodem/network_config.js:357
 msgid "Caution: Enabling this option will make it the IPV6 RA Master, and only one interface can be configured as such."
 msgstr ""
 
@@ -383,8 +388,8 @@ msgstr ""
 msgid "Caution: Only avalible for quectel sdx 5G Modem."
 msgstr ""
 
-#: view/qmodem/network_config.js:397
-#: view/qmodem/network_config.js:474
+#: view/qmodem/network_config.js:407
+#: view/qmodem/network_config.js:484
 msgid "Celcom (MY)"
 msgstr ""
 
@@ -409,10 +414,10 @@ msgstr ""
 #: vendor/neoway.sh:717
 #: vendor/neoway.sh:728
 #: vendor/neoway.sh:752
-#: vendor/simcom.sh:927
-#: vendor/simcom.sh:949
-#: vendor/simcom.sh:982
-#: vendor/simcom.sh:1001
+#: vendor/simcom.sh:1176
+#: vendor/simcom.sh:1198
+#: vendor/simcom.sh:1231
+#: vendor/simcom.sh:1250
 msgid "Cell ID"
 msgstr ""
 
@@ -425,7 +430,7 @@ msgstr ""
 #: vendor/meig.sh:559
 #: vendor/neoway.sh:710
 #: vendor/quectel.sh:1658
-#: vendor/simcom.sh:920
+#: vendor/simcom.sh:1169
 #: vendor/telit.sh:759
 #: view/qmodem/config_advanced.js:927
 #: view/qmodem/config_advanced.js:952
@@ -460,9 +465,9 @@ msgstr ""
 #: vendor/neoway.sh:741
 #: vendor/quectel.sh:1683
 #: vendor/quectel.sh:1701
-#: vendor/simcom.sh:933
-#: vendor/simcom.sh:963
-#: vendor/simcom.sh:993
+#: vendor/simcom.sh:1182
+#: vendor/simcom.sh:1212
+#: vendor/simcom.sh:1242
 msgid "Channel Quality Indicator"
 msgstr ""
 
@@ -479,32 +484,32 @@ msgstr ""
 msgid "Chat ID"
 msgstr ""
 
-#: view/qmodem/network_config.js:378
-#: view/qmodem/network_config.js:455
+#: view/qmodem/network_config.js:388
+#: view/qmodem/network_config.js:465
 msgid "China Broadcast (CN)"
 msgstr ""
 
-#: view/qmodem/network_config.js:375
-#: view/qmodem/network_config.js:452
+#: view/qmodem/network_config.js:385
+#: view/qmodem/network_config.js:462
 msgid "China Mobile (CN)"
 msgstr ""
 
-#: view/qmodem/network_config.js:377
-#: view/qmodem/network_config.js:454
+#: view/qmodem/network_config.js:387
+#: view/qmodem/network_config.js:464
 msgid "China Telecom (CN)"
 msgstr ""
 
-#: view/qmodem/network_config.js:376
-#: view/qmodem/network_config.js:453
+#: view/qmodem/network_config.js:386
+#: view/qmodem/network_config.js:463
 msgid "China Unicom (CN)"
 msgstr ""
 
-#: view/qmodem/network_config.js:907
+#: view/qmodem/network_config.js:917
 #: view/qmodem/sms_conversation.js:315
 msgid "Clear"
 msgstr ""
 
-#: view/qmodem/network_config.js:979
+#: view/qmodem/network_config.js:989
 msgid "Clear Dial Log"
 msgstr ""
 
@@ -516,7 +521,7 @@ msgstr ""
 msgid "Click \"Send AT Command\" to execute"
 msgstr ""
 
-#: view/qmodem/network_config.js:912
+#: view/qmodem/network_config.js:922
 msgid "Close"
 msgstr ""
 
@@ -579,7 +584,7 @@ msgstr ""
 msgid "Configured Ports"
 msgstr ""
 
-#: view/qmodem/network_config.js:1007
+#: view/qmodem/network_config.js:1017
 msgid "Confirm"
 msgstr ""
 
@@ -591,12 +596,12 @@ msgstr ""
 msgid "Confirm Delete All"
 msgstr ""
 
-#: generic.sh:526
+#: generic.sh:527
 msgid "Connect Status"
 msgstr ""
 
 #: view/qmodem/network_config.js:221
-#: view/qmodem/network_config.js:666
+#: view/qmodem/network_config.js:676
 msgid "Connected"
 msgstr ""
 
@@ -678,10 +683,10 @@ msgstr ""
 #: vendor/meig.sh:597
 #: vendor/meig.sh:613
 #: vendor/neoway.sh:742
-#: vendor/simcom.sh:932
-#: vendor/simcom.sh:955
-#: vendor/simcom.sh:972
-#: vendor/simcom.sh:987
+#: vendor/simcom.sh:1181
+#: vendor/simcom.sh:1204
+#: vendor/simcom.sh:1221
+#: vendor/simcom.sh:1236
 msgid "DL Bandwidth"
 msgstr ""
 
@@ -689,7 +694,7 @@ msgstr ""
 msgid "DL Bandwidth (CA)"
 msgstr ""
 
-#: vendor/simcom.sh:935
+#: vendor/simcom.sh:1184
 #: vendor/telit.sh:766
 msgid "DL/UL MOD"
 msgstr ""
@@ -710,15 +715,19 @@ msgstr ""
 msgid "Default Metric"
 msgstr ""
 
+#: view/qmodem/settings.js:462
+msgid "Default bridge port for passthrough. Device-level bridge_port overrides this slot default."
+msgstr ""
+
 #: view/qmodem/settings.js:103
 msgid "Delay Start"
 msgstr ""
 
-#: view/qmodem/network_config.js:508
+#: view/qmodem/network_config.js:518
 msgid "Delay of executing AT command after modem initialization, in seconds."
 msgstr ""
 
-#: view/qmodem/network_config.js:499
+#: view/qmodem/network_config.js:509
 msgid "Delay of executing AT command before dialing, in seconds."
 msgstr ""
 
@@ -758,12 +767,16 @@ msgstr ""
 msgid "Device Path"
 msgstr ""
 
-#: view/qmodem/network_config.js:398
-#: view/qmodem/network_config.js:475
+#: view/qmodem/network_config.js:335
+msgid "Device-level bridge port for passthrough. If set, it overrides the slot default bridge port."
+msgstr ""
+
+#: view/qmodem/network_config.js:408
+#: view/qmodem/network_config.js:485
 msgid "DiGi (MY)"
 msgstr ""
 
-#: view/qmodem/network_config.js:611
+#: view/qmodem/network_config.js:621
 msgid "Dial"
 msgstr ""
 
@@ -777,7 +790,7 @@ msgid "Dial Control"
 msgstr ""
 
 #: view/qmodem/network_config.js:266
-#: view/qmodem/network_config.js:868
+#: view/qmodem/network_config.js:878
 msgid "Dial Log"
 msgstr ""
 
@@ -789,7 +802,7 @@ msgstr ""
 msgid "Dial Mode Configuration"
 msgstr ""
 
-#: view/qmodem/network_config.js:599
+#: view/qmodem/network_config.js:609
 msgid "Dial command sent successfully"
 msgstr ""
 
@@ -798,7 +811,7 @@ msgid "Dial disabled for this modem"
 msgstr ""
 
 #: view/qmodem/network_config.js:188
-#: view/qmodem/network_config.js:847
+#: view/qmodem/network_config.js:857
 msgid "Disable"
 msgstr ""
 
@@ -807,7 +820,7 @@ msgid "Disabled Features"
 msgstr ""
 
 #: view/qmodem/network_config.js:224
-#: view/qmodem/network_config.js:669
+#: view/qmodem/network_config.js:679
 msgid "Disconnected"
 msgstr ""
 
@@ -815,25 +828,25 @@ msgstr ""
 msgid "Discontinuous Reception"
 msgstr ""
 
-#: view/qmodem/network_config.js:395
-#: view/qmodem/network_config.js:472
+#: view/qmodem/network_config.js:405
+#: view/qmodem/network_config.js:482
 msgid "Dito Telecomunity (PH)"
 msgstr ""
 
-#: view/qmodem/network_config.js:340
+#: view/qmodem/network_config.js:350
 msgid "Do Not NAT(Only for Quectel Modem)"
 msgstr ""
 
-#: view/qmodem/network_config.js:334
+#: view/qmodem/network_config.js:344
 msgid "Do Not modify resolv.conf"
 msgstr ""
 
-#: view/qmodem/network_config.js:900
+#: view/qmodem/network_config.js:910
 msgid "Download"
 msgstr ""
 
-#: view/qmodem/network_config.js:389
-#: view/qmodem/network_config.js:466
+#: view/qmodem/network_config.js:399
+#: view/qmodem/network_config.js:476
 msgid "Drei (AT)"
 msgstr ""
 
@@ -849,14 +862,14 @@ msgstr ""
 #: vendor/quectel.sh:1662
 #: vendor/quectel.sh:1676
 #: vendor/quectel.sh:1695
-#: vendor/simcom.sh:926
-#: vendor/simcom.sh:948
-#: vendor/simcom.sh:981
+#: vendor/simcom.sh:1175
+#: vendor/simcom.sh:1197
+#: vendor/simcom.sh:1230
 msgid "Duplex Mode"
 msgstr ""
 
-#: view/qmodem/network_config.js:386
-#: view/qmodem/network_config.js:463
+#: view/qmodem/network_config.js:396
+#: view/qmodem/network_config.js:473
 msgid "E-Plus (DE)"
 msgstr ""
 
@@ -866,8 +879,8 @@ msgstr ""
 #: vendor/huawei.sh:531
 #: vendor/huawei.sh:556
 #: vendor/neoway.sh:730
-#: vendor/simcom.sh:951
-#: vendor/simcom.sh:984
+#: vendor/simcom.sh:1200
+#: vendor/simcom.sh:1233
 msgid "E-UTRA Absolute Radio Frequency Channel Number"
 msgstr ""
 
@@ -875,7 +888,7 @@ msgstr ""
 #: vendor/huawei.sh:582
 #: vendor/meig.sh:627
 #: vendor/neoway.sh:760
-#: vendor/simcom.sh:1005
+#: vendor/simcom.sh:1254
 msgid "Ec/Io"
 msgstr ""
 
@@ -886,7 +899,7 @@ msgid "Ec/No"
 msgstr ""
 
 #: view/qmodem/network_config.js:169
-#: view/qmodem/network_config.js:828
+#: view/qmodem/network_config.js:838
 #: view/qmodem/sms_forward.js:45
 msgid "Enable"
 msgstr ""
@@ -921,7 +934,7 @@ msgid "Enable to use Ubus AT daemon instead of direct serial port access"
 msgstr ""
 
 #: view/qmodem/network_config.js:76
-#: view/qmodem/network_config.js:738
+#: view/qmodem/network_config.js:748
 #: view/qmodem/settings.js:281
 msgid "Enabled"
 msgstr ""
@@ -935,13 +948,13 @@ msgstr ""
 msgid "Energy per Chip over Noise"
 msgstr ""
 
-#: view/qmodem/network_config.js:518
-#: view/qmodem/network_config.js:525
+#: view/qmodem/network_config.js:528
+#: view/qmodem/network_config.js:535
 msgid "Enter AT commands"
 msgstr ""
 
-#: view/qmodem/network_config.js:500
-#: view/qmodem/network_config.js:509
+#: view/qmodem/network_config.js:510
+#: view/qmodem/network_config.js:519
 msgid "Enter delay in seconds"
 msgstr ""
 
@@ -1053,13 +1066,13 @@ msgstr ""
 msgid "Error switching SIM slot: %s"
 msgstr ""
 
-#: view/qmodem/network_config.js:572
-#: view/qmodem/network_config.js:586
-#: view/qmodem/network_config.js:608
-#: view/qmodem/network_config.js:691
-#: view/qmodem/network_config.js:861
-#: view/qmodem/network_config.js:946
-#: view/qmodem/network_config.js:1003
+#: view/qmodem/network_config.js:582
+#: view/qmodem/network_config.js:596
+#: view/qmodem/network_config.js:618
+#: view/qmodem/network_config.js:701
+#: view/qmodem/network_config.js:871
+#: view/qmodem/network_config.js:956
+#: view/qmodem/network_config.js:1013
 msgid "Error: "
 msgstr ""
 
@@ -1079,7 +1092,7 @@ msgstr ""
 msgid "Error: Please enter AT command"
 msgstr ""
 
-#: view/qmodem/network_config.js:352
+#: view/qmodem/network_config.js:362
 msgid "Extend Prefix"
 msgstr ""
 
@@ -1095,7 +1108,7 @@ msgstr ""
 msgid "Failed to apply lock cell configuration"
 msgstr ""
 
-#: view/qmodem/network_config.js:999
+#: view/qmodem/network_config.js:1009
 msgid "Failed to clear log"
 msgstr ""
 
@@ -1110,16 +1123,16 @@ msgid "Failed to delete message"
 msgstr ""
 
 #: view/qmodem/network_config.js:184
-#: view/qmodem/network_config.js:843
+#: view/qmodem/network_config.js:853
 msgid "Failed to disable QModem Network: "
 msgstr ""
 
-#: view/qmodem/network_config.js:974
+#: view/qmodem/network_config.js:984
 msgid "Failed to download log: "
 msgstr ""
 
 #: view/qmodem/network_config.js:165
-#: view/qmodem/network_config.js:824
+#: view/qmodem/network_config.js:834
 msgid "Failed to enable QModem Network: "
 msgstr ""
 
@@ -1151,7 +1164,7 @@ msgstr ""
 msgid "Failed to load available modes"
 msgstr ""
 
-#: view/qmodem/network_config.js:938
+#: view/qmodem/network_config.js:948
 msgid "Failed to load log"
 msgstr ""
 
@@ -1168,12 +1181,12 @@ msgid "Failed to load reboot capabilities"
 msgstr ""
 
 #: view/qmodem/network_config.js:68
-#: view/qmodem/network_config.js:855
+#: view/qmodem/network_config.js:865
 msgid "Failed to load status"
 msgstr ""
 
 #: view/qmodem/network_config.js:141
-#: view/qmodem/network_config.js:800
+#: view/qmodem/network_config.js:810
 msgid "Failed to restart QModem Network: "
 msgstr ""
 
@@ -1192,15 +1205,15 @@ msgstr ""
 msgid "Failed to send SMS: "
 msgstr ""
 
-#: view/qmodem/network_config.js:605
+#: view/qmodem/network_config.js:615
 msgid "Failed to send dial command"
 msgstr ""
 
-#: view/qmodem/network_config.js:569
+#: view/qmodem/network_config.js:579
 msgid "Failed to send hang command"
 msgstr ""
 
-#: view/qmodem/network_config.js:583
+#: view/qmodem/network_config.js:593
 msgid "Failed to send redial command"
 msgstr ""
 
@@ -1225,12 +1238,12 @@ msgid "Failed to set network preference"
 msgstr ""
 
 #: view/qmodem/network_config.js:104
-#: view/qmodem/network_config.js:763
+#: view/qmodem/network_config.js:773
 msgid "Failed to start QModem Network: "
 msgstr ""
 
 #: view/qmodem/network_config.js:123
-#: view/qmodem/network_config.js:782
+#: view/qmodem/network_config.js:792
 msgid "Failed to stop QModem Network: "
 msgstr ""
 
@@ -1254,7 +1267,7 @@ msgstr ""
 msgid "For 5G modules using the Ethernet PHY connection, please specify the network interface name (e.g., eth0, eth1)"
 msgstr ""
 
-#: view/qmodem/settings.js:462
+#: view/qmodem/settings.js:472
 msgid "For M.2 slots with both PCIe and USB support, specify the associated USB port (for ttyUSB access)"
 msgstr ""
 
@@ -1270,8 +1283,8 @@ msgstr ""
 #: vendor/foxconn.sh:637
 #: vendor/huawei.sh:532
 #: vendor/huawei.sh:557
-#: vendor/simcom.sh:952
-#: vendor/simcom.sh:985
+#: vendor/simcom.sh:1201
+#: vendor/simcom.sh:1234
 msgid "Freq band indicator"
 msgstr ""
 
@@ -1291,15 +1304,15 @@ msgstr ""
 msgid "Full scan failed"
 msgstr ""
 
-#: view/qmodem/settings.js:477
+#: view/qmodem/settings.js:487
 msgid "GPIO Value(Modem Power Down)"
 msgstr ""
 
-#: view/qmodem/settings.js:482
+#: view/qmodem/settings.js:492
 msgid "GPIO Value(Modem Power Up)"
 msgstr ""
 
-#: view/qmodem/settings.js:473
+#: view/qmodem/settings.js:483
 msgid "GPIO pin for power control"
 msgstr ""
 
@@ -1311,13 +1324,13 @@ msgstr ""
 msgid "Global Settings"
 msgstr ""
 
-#: view/qmodem/network_config.js:393
-#: view/qmodem/network_config.js:470
+#: view/qmodem/network_config.js:403
+#: view/qmodem/network_config.js:480
 msgid "Globe Postpaid (PH)"
 msgstr ""
 
-#: view/qmodem/network_config.js:392
-#: view/qmodem/network_config.js:469
+#: view/qmodem/network_config.js:402
+#: view/qmodem/network_config.js:479
 msgid "Globe Prepaid (PH)"
 msgstr ""
 
@@ -1325,11 +1338,11 @@ msgstr ""
 msgid "HTTP headers, one per line"
 msgstr ""
 
-#: view/qmodem/network_config.js:575
+#: view/qmodem/network_config.js:585
 msgid "Hang"
 msgstr ""
 
-#: view/qmodem/network_config.js:563
+#: view/qmodem/network_config.js:573
 msgid "Hang command sent successfully"
 msgstr ""
 
@@ -1369,15 +1382,15 @@ msgstr ""
 msgid "IMEI set successfully. Please reboot the modem for changes to take effect."
 msgstr ""
 
-#: view/qmodem/network_config.js:363
+#: view/qmodem/network_config.js:373
 msgid "IPv4"
 msgstr ""
 
-#: view/qmodem/network_config.js:365
+#: view/qmodem/network_config.js:375
 msgid "IPv4/IPv6"
 msgstr ""
 
-#: view/qmodem/network_config.js:364
+#: view/qmodem/network_config.js:374
 msgid "IPv6"
 msgstr ""
 
@@ -1393,11 +1406,11 @@ msgstr ""
 msgid "If enabled, using alternative AT Tools"
 msgstr ""
 
-#: view/qmodem/network_config.js:341
+#: view/qmodem/network_config.js:351
 msgid "If enabled, will turn off NAT function on quectel modem."
 msgstr ""
 
-#: view/qmodem/network_config.js:447
+#: view/qmodem/network_config.js:457
 msgid "If slot 2 config is not set,will use slot 1 config."
 msgstr ""
 
@@ -1405,7 +1418,7 @@ msgstr ""
 msgid "If the DNS server is not set, it will use the DNS server leased by the operator."
 msgstr ""
 
-#: view/qmodem/network_config.js:441
+#: view/qmodem/network_config.js:451
 msgid "If the PIN code is not set, leave it blank."
 msgstr ""
 
@@ -1436,8 +1449,8 @@ msgstr ""
 #: vendor/neoway.sh:232
 #: vendor/quectel.sh:426
 #: vendor/quectel.sh:440
-#: vendor/simcom.sh:307
-#: vendor/simcom.sh:321
+#: vendor/simcom.sh:331
+#: vendor/simcom.sh:345
 #: vendor/telit.sh:223
 #: vendor/telit.sh:237
 msgid "Integrate Circuit Card Identity"
@@ -1461,9 +1474,9 @@ msgstr ""
 #: vendor/quectel.sh:424
 #: vendor/quectel.sh:430
 #: vendor/quectel.sh:438
-#: vendor/simcom.sh:305
-#: vendor/simcom.sh:311
-#: vendor/simcom.sh:319
+#: vendor/simcom.sh:329
+#: vendor/simcom.sh:335
+#: vendor/simcom.sh:343
 #: vendor/telit.sh:221
 #: vendor/telit.sh:227
 #: vendor/telit.sh:235
@@ -1482,8 +1495,8 @@ msgstr ""
 #: vendor/neoway.sh:231
 #: vendor/quectel.sh:425
 #: vendor/quectel.sh:439
-#: vendor/simcom.sh:306
-#: vendor/simcom.sh:320
+#: vendor/simcom.sh:330
+#: vendor/simcom.sh:344
 #: vendor/telit.sh:222
 #: vendor/telit.sh:236
 msgid "International Mobile Subscriber Identity"
@@ -1495,7 +1508,7 @@ msgstr ""
 #: vendor/meig.sh:283
 #: vendor/neoway.sh:213
 #: vendor/quectel.sh:421
-#: vendor/simcom.sh:302
+#: vendor/simcom.sh:326
 #: vendor/telit.sh:219
 msgid "Internet Service Provider"
 msgstr ""
@@ -1586,7 +1599,7 @@ msgstr ""
 #: view/qmodem/debug.js:83
 #: view/qmodem/network_config.js:212
 #: view/qmodem/network_config.js:300
-#: view/qmodem/network_config.js:872
+#: view/qmodem/network_config.js:882
 #: view/qmodem/sim_switch.js:87
 #: view/qmodem/sms.js:190
 #: view/qmodem/sms.js:207
@@ -1615,7 +1628,7 @@ msgstr ""
 #: vendor/huawei.sh:575
 #: vendor/meig.sh:622
 #: vendor/neoway.sh:751
-#: vendor/simcom.sh:1000
+#: vendor/simcom.sh:1249
 msgid "Location Area Code"
 msgstr ""
 
@@ -1655,21 +1668,21 @@ msgstr ""
 msgid "Log Level"
 msgstr ""
 
-#: view/qmodem/network_config.js:992
+#: view/qmodem/network_config.js:1002
 msgid "Log cleared successfully"
 msgstr ""
 
-#: view/qmodem/network_config.js:969
+#: view/qmodem/network_config.js:979
 msgid "Log downloaded successfully"
 msgstr ""
 
-#: view/qmodem/network_config.js:406
-#: view/qmodem/network_config.js:483
+#: view/qmodem/network_config.js:416
+#: view/qmodem/network_config.js:493
 msgid "MTS (RU)"
 msgstr ""
 
-#: view/qmodem/network_config.js:390
-#: view/qmodem/network_config.js:467
+#: view/qmodem/network_config.js:400
+#: view/qmodem/network_config.js:477
 msgid "Magenta (AT)"
 msgstr ""
 
@@ -1681,23 +1694,23 @@ msgstr ""
 #: vendor/neoway.sh:159
 #: vendor/quectel.sh:361
 #: vendor/sierra.sh:213
-#: vendor/simcom.sh:243
+#: vendor/simcom.sh:267
 #: vendor/telit.sh:162
 msgid "Manufacturer"
 msgstr ""
 
-#: view/qmodem/network_config.js:400
-#: view/qmodem/network_config.js:477
+#: view/qmodem/network_config.js:410
+#: view/qmodem/network_config.js:487
 msgid "Maxis UT (MY)"
 msgstr ""
 
-#: view/qmodem/network_config.js:399
-#: view/qmodem/network_config.js:476
+#: view/qmodem/network_config.js:409
+#: view/qmodem/network_config.js:486
 msgid "Maxis | Hotlink (MY)"
 msgstr ""
 
-#: view/qmodem/network_config.js:407
-#: view/qmodem/network_config.js:484
+#: view/qmodem/network_config.js:417
+#: view/qmodem/network_config.js:494
 msgid "Megafon (RU)"
 msgstr ""
 
@@ -1727,7 +1740,7 @@ msgstr ""
 msgid "Message sent successfully"
 msgstr ""
 
-#: view/qmodem/network_config.js:491
+#: view/qmodem/network_config.js:501
 msgid "Metric"
 msgstr ""
 
@@ -1750,11 +1763,11 @@ msgstr ""
 #: vendor/neoway.sh:726
 #: vendor/neoway.sh:749
 #: vendor/neoway.sh:772
-#: vendor/simcom.sh:924
-#: vendor/simcom.sh:946
-#: vendor/simcom.sh:967
-#: vendor/simcom.sh:979
-#: vendor/simcom.sh:998
+#: vendor/simcom.sh:1173
+#: vendor/simcom.sh:1195
+#: vendor/simcom.sh:1216
+#: vendor/simcom.sh:1228
+#: vendor/simcom.sh:1247
 msgid "Mobile Country Code"
 msgstr ""
 
@@ -1784,11 +1797,11 @@ msgstr ""
 #: vendor/neoway.sh:727
 #: vendor/neoway.sh:750
 #: vendor/neoway.sh:773
-#: vendor/simcom.sh:925
-#: vendor/simcom.sh:947
-#: vendor/simcom.sh:968
-#: vendor/simcom.sh:980
-#: vendor/simcom.sh:999
+#: vendor/simcom.sh:1174
+#: vendor/simcom.sh:1196
+#: vendor/simcom.sh:1217
+#: vendor/simcom.sh:1229
+#: vendor/simcom.sh:1248
 msgid "Mobile Network Code"
 msgstr ""
 
@@ -1835,7 +1848,7 @@ msgstr ""
 msgid "Modem Name"
 msgstr ""
 
-#: generic.sh:542
+#: generic.sh:543
 msgid "Modem Offline"
 msgstr ""
 
@@ -1863,7 +1876,7 @@ msgstr ""
 msgid "Monday"
 msgstr ""
 
-#: view/qmodem/network_config.js:416
+#: view/qmodem/network_config.js:426
 msgid "MsChapV2"
 msgstr ""
 
@@ -1871,7 +1884,7 @@ msgstr ""
 msgid "Multi-part"
 msgstr ""
 
-#: view/qmodem/network_config.js:415
+#: view/qmodem/network_config.js:425
 msgid "NONE"
 msgstr ""
 
@@ -1895,7 +1908,7 @@ msgstr ""
 #: vendor/neoway.sh:158
 #: vendor/quectel.sh:360
 #: vendor/sierra.sh:212
-#: vendor/simcom.sh:242
+#: vendor/simcom.sh:266
 #: vendor/telit.sh:161
 msgid "Name"
 msgstr ""
@@ -1919,7 +1932,7 @@ msgstr ""
 #: vendor/neoway.sh:287
 #: vendor/quectel.sh:504
 #: vendor/sierra.sh:222
-#: vendor/simcom.sh:340
+#: vendor/simcom.sh:364
 #: vendor/telit.sh:258
 msgid "Network Information"
 msgstr ""
@@ -1942,7 +1955,7 @@ msgstr ""
 #: vendor/meig.sh:560
 #: vendor/neoway.sh:711
 #: vendor/quectel.sh:1659
-#: vendor/simcom.sh:921
+#: vendor/simcom.sh:1170
 #: vendor/telit.sh:760
 msgid "Network Mode"
 msgstr ""
@@ -1961,7 +1974,7 @@ msgstr ""
 #: vendor/meig.sh:381
 #: vendor/neoway.sh:771
 #: vendor/quectel.sh:505
-#: vendor/simcom.sh:341
+#: vendor/simcom.sh:365
 #: vendor/telit.sh:259
 msgid "Network Type"
 msgstr ""
@@ -1981,8 +1994,8 @@ msgstr ""
 
 #: view/qmodem/network_config.js:76
 #: view/qmodem/network_config.js:77
-#: view/qmodem/network_config.js:738
-#: view/qmodem/network_config.js:739
+#: view/qmodem/network_config.js:748
+#: view/qmodem/network_config.js:749
 msgid "No"
 msgstr ""
 
@@ -1998,11 +2011,11 @@ msgstr ""
 msgid "No features available for this modem."
 msgstr ""
 
-#: view/qmodem/network_config.js:929
+#: view/qmodem/network_config.js:939
 msgid "No log available"
 msgstr ""
 
-#: view/qmodem/network_config.js:971
+#: view/qmodem/network_config.js:981
 msgid "No log content to download"
 msgstr ""
 
@@ -2098,7 +2111,7 @@ msgstr ""
 msgid "Note: Some modems may require a reboot for the change to take effect."
 msgstr ""
 
-#: view/qmodem/network_config.js:353
+#: view/qmodem/network_config.js:363
 msgid "Once checking, the prefix will be apply to lan zone"
 msgstr ""
 
@@ -2126,11 +2139,11 @@ msgstr ""
 msgid "Override AT Port"
 msgstr ""
 
-#: view/qmodem/network_config.js:431
+#: view/qmodem/network_config.js:441
 msgid "PAP/CHAP Password"
 msgstr ""
 
-#: view/qmodem/network_config.js:423
+#: view/qmodem/network_config.js:433
 msgid "PAP/CHAP Username"
 msgstr ""
 
@@ -2158,15 +2171,15 @@ msgstr ""
 msgid "PCIe scan failed"
 msgstr ""
 
-#: view/qmodem/network_config.js:358
+#: view/qmodem/network_config.js:368
 msgid "PDP Context Index"
 msgstr ""
 
-#: view/qmodem/network_config.js:362
+#: view/qmodem/network_config.js:372
 msgid "PDP Type"
 msgstr ""
 
-#: view/qmodem/network_config.js:440
+#: view/qmodem/network_config.js:450
 msgid "PIN Code"
 msgstr ""
 
@@ -2212,10 +2225,10 @@ msgstr ""
 #: vendor/meig.sh:609
 #: vendor/neoway.sh:718
 #: vendor/neoway.sh:729
-#: vendor/simcom.sh:928
-#: vendor/simcom.sh:950
-#: vendor/simcom.sh:969
-#: vendor/simcom.sh:983
+#: vendor/simcom.sh:1177
+#: vendor/simcom.sh:1199
+#: vendor/simcom.sh:1218
+#: vendor/simcom.sh:1232
 #: vendor/telit.sh:764
 #: view/qmodem/config_advanced.js:729
 msgid "Physical Cell ID"
@@ -2269,15 +2282,15 @@ msgstr ""
 msgid "Poll Interval (seconds)"
 msgstr ""
 
-#: view/qmodem/network_config.js:516
+#: view/qmodem/network_config.js:526
 msgid "Post Init AT Commands"
 msgstr ""
 
-#: view/qmodem/network_config.js:507
+#: view/qmodem/network_config.js:517
 msgid "Post Init Delay"
 msgstr ""
 
-#: view/qmodem/settings.js:472
+#: view/qmodem/settings.js:482
 msgid "Power GPIO"
 msgstr ""
 
@@ -2285,11 +2298,11 @@ msgstr ""
 msgid "Power cycles the modem completely. Takes longer but ensures a full restart."
 msgstr ""
 
-#: view/qmodem/network_config.js:523
+#: view/qmodem/network_config.js:533
 msgid "Pre Dial AT Commands"
 msgstr ""
 
-#: view/qmodem/network_config.js:498
+#: view/qmodem/network_config.js:508
 msgid "Pre Dial Delay"
 msgstr ""
 
@@ -2299,7 +2312,7 @@ msgstr ""
 #: vendor/huawei.sh:578
 #: vendor/meig.sh:624
 #: vendor/neoway.sh:754
-#: vendor/simcom.sh:1003
+#: vendor/simcom.sh:1252
 msgid "Primary Scrambling Code"
 msgstr ""
 
@@ -2324,27 +2337,27 @@ msgid "QModem Network"
 msgstr ""
 
 #: view/qmodem/network_config.js:180
-#: view/qmodem/network_config.js:839
+#: view/qmodem/network_config.js:849
 msgid "QModem Network disabled successfully"
 msgstr ""
 
 #: view/qmodem/network_config.js:161
-#: view/qmodem/network_config.js:820
+#: view/qmodem/network_config.js:830
 msgid "QModem Network enabled successfully"
 msgstr ""
 
 #: view/qmodem/network_config.js:137
-#: view/qmodem/network_config.js:796
+#: view/qmodem/network_config.js:806
 msgid "QModem Network restarted successfully"
 msgstr ""
 
 #: view/qmodem/network_config.js:100
-#: view/qmodem/network_config.js:759
+#: view/qmodem/network_config.js:769
 msgid "QModem Network started successfully"
 msgstr ""
 
 #: view/qmodem/network_config.js:119
-#: view/qmodem/network_config.js:778
+#: view/qmodem/network_config.js:788
 msgid "QModem Network stopped successfully"
 msgstr ""
 
@@ -2356,7 +2369,7 @@ msgstr ""
 msgid "Quick Commands"
 msgstr ""
 
-#: view/qmodem/network_config.js:346
+#: view/qmodem/network_config.js:356
 msgid "RA Master"
 msgstr ""
 
@@ -2376,11 +2389,11 @@ msgstr ""
 #: vendor/foxconn.sh:590
 #: vendor/huawei.sh:544
 #: vendor/huawei.sh:566
-#: vendor/simcom.sh:962
+#: vendor/simcom.sh:1211
 msgid "Radio Signal Strength Noise Ratio"
 msgstr ""
 
-#: view/qmodem/network_config.js:589
+#: view/qmodem/network_config.js:599
 msgid "ReDial"
 msgstr ""
 
@@ -2415,7 +2428,7 @@ msgstr ""
 #: vendor/huawei.sh:581
 #: vendor/meig.sh:626
 #: vendor/neoway.sh:759
-#: vendor/simcom.sh:1004
+#: vendor/simcom.sh:1253
 msgid "Received Signal Code Power"
 msgstr ""
 
@@ -2428,9 +2441,9 @@ msgstr ""
 #: vendor/huawei.sh:520
 #: vendor/huawei.sh:543
 #: vendor/huawei.sh:565
-#: vendor/simcom.sh:940
-#: vendor/simcom.sh:961
-#: vendor/simcom.sh:1007
+#: vendor/simcom.sh:1189
+#: vendor/simcom.sh:1210
+#: vendor/simcom.sh:1256
 msgid "Received Signal Level"
 msgstr ""
 
@@ -2446,14 +2459,14 @@ msgstr ""
 #: vendor/neoway.sh:738
 #: vendor/quectel.sh:1682
 #: vendor/quectel.sh:1700
-#: vendor/simcom.sh:938
-#: vendor/simcom.sh:959
-#: vendor/simcom.sh:991
+#: vendor/simcom.sh:1187
+#: vendor/simcom.sh:1208
+#: vendor/simcom.sh:1240
 #: vendor/telit.sh:770
 msgid "Received Signal Strength Indicator"
 msgstr ""
 
-#: view/qmodem/network_config.js:581
+#: view/qmodem/network_config.js:591
 msgid "Redial command sent successfully"
 msgstr ""
 
@@ -2472,10 +2485,10 @@ msgstr ""
 #: vendor/meig.sh:614
 #: vendor/neoway.sh:721
 #: vendor/neoway.sh:735
-#: vendor/simcom.sh:936
-#: vendor/simcom.sh:957
-#: vendor/simcom.sh:973
-#: vendor/simcom.sh:989
+#: vendor/simcom.sh:1185
+#: vendor/simcom.sh:1206
+#: vendor/simcom.sh:1222
+#: vendor/simcom.sh:1238
 #: vendor/telit.sh:768
 msgid "Reference Signal Received Power"
 msgstr ""
@@ -2498,10 +2511,10 @@ msgstr ""
 #: vendor/meig.sh:615
 #: vendor/neoway.sh:722
 #: vendor/neoway.sh:736
-#: vendor/simcom.sh:937
-#: vendor/simcom.sh:958
-#: vendor/simcom.sh:974
-#: vendor/simcom.sh:990
+#: vendor/simcom.sh:1186
+#: vendor/simcom.sh:1207
+#: vendor/simcom.sh:1223
+#: vendor/simcom.sh:1239
 #: vendor/telit.sh:769
 msgid "Reference Signal Received Quality"
 msgstr ""
@@ -2520,7 +2533,7 @@ msgid "Response"
 msgstr ""
 
 #: view/qmodem/network_config.js:145
-#: view/qmodem/network_config.js:804
+#: view/qmodem/network_config.js:814
 msgid "Restart"
 msgstr ""
 
@@ -2540,13 +2553,13 @@ msgstr ""
 #: vendor/neoway.sh:160
 #: vendor/quectel.sh:362
 #: vendor/sierra.sh:214
-#: vendor/simcom.sh:244
+#: vendor/simcom.sh:268
 #: vendor/telit.sh:163
 msgid "Revision"
 msgstr ""
 
-#: view/qmodem/network_config.js:411
-#: view/qmodem/network_config.js:488
+#: view/qmodem/network_config.js:421
+#: view/qmodem/network_config.js:498
 msgid "Rostelecom (RU)"
 msgstr ""
 
@@ -2557,7 +2570,7 @@ msgid "Routing Area Code"
 msgstr ""
 
 #: view/qmodem/network_config.js:77
-#: view/qmodem/network_config.js:739
+#: view/qmodem/network_config.js:749
 msgid "Running"
 msgstr ""
 
@@ -2576,8 +2589,8 @@ msgstr ""
 #: vendor/meig.sh:601
 #: vendor/quectel.sh:1666
 #: vendor/quectel.sh:1692
-#: vendor/simcom.sh:941
-#: vendor/simcom.sh:976
+#: vendor/simcom.sh:1190
+#: vendor/simcom.sh:1225
 #: view/qmodem/config_advanced.js:771
 msgid "SCS"
 msgstr ""
@@ -2593,7 +2606,7 @@ msgstr ""
 msgid "SIM Card SMS Management"
 msgstr ""
 
-#: generic.sh:541
+#: generic.sh:542
 msgid "SIM Error,Error code:"
 msgstr ""
 
@@ -2605,7 +2618,7 @@ msgstr ""
 #: vendor/neoway.sh:209
 #: vendor/quectel.sh:417
 #: vendor/sierra.sh:183
-#: vendor/simcom.sh:298
+#: vendor/simcom.sh:322
 #: vendor/telit.sh:215
 msgid "SIM Information"
 msgstr ""
@@ -2621,7 +2634,7 @@ msgstr ""
 #: vendor/meig.sh:285
 #: vendor/neoway.sh:215
 #: vendor/quectel.sh:423
-#: vendor/simcom.sh:304
+#: vendor/simcom.sh:328
 msgid "SIM Number"
 msgstr ""
 
@@ -2638,8 +2651,8 @@ msgstr ""
 #: vendor/quectel.sh:422
 #: vendor/quectel.sh:437
 #: vendor/sierra.sh:196
-#: vendor/simcom.sh:303
-#: vendor/simcom.sh:318
+#: vendor/simcom.sh:327
+#: vendor/simcom.sh:342
 #: vendor/telit.sh:220
 #: vendor/telit.sh:234
 msgid "SIM Slot"
@@ -2669,10 +2682,10 @@ msgstr ""
 #: vendor/quectel.sh:433
 #: vendor/quectel.sh:436
 #: vendor/sierra.sh:195
-#: vendor/simcom.sh:301
-#: vendor/simcom.sh:310
-#: vendor/simcom.sh:314
-#: vendor/simcom.sh:317
+#: vendor/simcom.sh:325
+#: vendor/simcom.sh:334
+#: vendor/simcom.sh:338
+#: vendor/simcom.sh:341
 #: vendor/telit.sh:218
 #: vendor/telit.sh:226
 #: vendor/telit.sh:230
@@ -2732,8 +2745,8 @@ msgstr ""
 msgid "Save"
 msgstr ""
 
-#: view/qmodem/network_config.js:412
-#: view/qmodem/network_config.js:489
+#: view/qmodem/network_config.js:422
+#: view/qmodem/network_config.js:499
 msgid "Sber Mobile (RU)"
 msgstr ""
 
@@ -2878,9 +2891,9 @@ msgstr ""
 #: vendor/quectel.sh:1667
 #: vendor/quectel.sh:1685
 #: vendor/quectel.sh:1703
-#: vendor/simcom.sh:942
-#: vendor/simcom.sh:965
-#: vendor/simcom.sh:995
+#: vendor/simcom.sh:1191
+#: vendor/simcom.sh:1214
+#: vendor/simcom.sh:1244
 msgid "Serving Cell Receive Level"
 msgstr ""
 
@@ -2916,10 +2929,10 @@ msgstr ""
 #: vendor/huawei.sh:542
 #: vendor/huawei.sh:548
 #: vendor/huawei.sh:564
-#: vendor/simcom.sh:939
-#: vendor/simcom.sh:960
-#: vendor/simcom.sh:975
-#: vendor/simcom.sh:992
+#: vendor/simcom.sh:1188
+#: vendor/simcom.sh:1209
+#: vendor/simcom.sh:1224
+#: vendor/simcom.sh:1241
 #: vendor/telit.sh:771
 msgid "Signal to Interference plus Noise Ratio Bandwidth"
 msgstr ""
@@ -2928,8 +2941,8 @@ msgstr ""
 msgid "Single"
 msgstr ""
 
-#: view/qmodem/network_config.js:379
-#: view/qmodem/network_config.js:456
+#: view/qmodem/network_config.js:389
+#: view/qmodem/network_config.js:466
 msgid "Skytone (CN)"
 msgstr ""
 
@@ -2953,8 +2966,8 @@ msgstr ""
 msgid "Slot Type"
 msgstr ""
 
-#: view/qmodem/network_config.js:394
-#: view/qmodem/network_config.js:471
+#: view/qmodem/network_config.js:404
+#: view/qmodem/network_config.js:481
 msgid "Smart Communications (PH)"
 msgstr ""
 
@@ -2985,7 +2998,7 @@ msgid "Spreading Factor"
 msgstr ""
 
 #: view/qmodem/network_config.js:108
-#: view/qmodem/network_config.js:767
+#: view/qmodem/network_config.js:777
 msgid "Start"
 msgstr ""
 
@@ -2995,7 +3008,7 @@ msgid "Status"
 msgstr ""
 
 #: view/qmodem/network_config.js:127
-#: view/qmodem/network_config.js:786
+#: view/qmodem/network_config.js:796
 msgid "Stop"
 msgstr ""
 
@@ -3027,8 +3040,8 @@ msgstr ""
 msgid "Supports placeholders: {SENDER}, {CONTENT}, {TIME}"
 msgstr ""
 
-#: view/qmodem/network_config.js:381
-#: view/qmodem/network_config.js:458
+#: view/qmodem/network_config.js:391
+#: view/qmodem/network_config.js:468
 msgid "Swisscom (CH)"
 msgstr ""
 
@@ -3040,8 +3053,8 @@ msgstr ""
 msgid "Switching SIM slot..."
 msgstr ""
 
-#: view/qmodem/network_config.js:410
-#: view/qmodem/network_config.js:487
+#: view/qmodem/network_config.js:420
+#: view/qmodem/network_config.js:497
 msgid "T-mobile (RU)"
 msgstr ""
 
@@ -3055,9 +3068,9 @@ msgstr ""
 #: vendor/meig.sh:617
 #: vendor/quectel.sh:1684
 #: vendor/quectel.sh:1702
-#: vendor/simcom.sh:934
-#: vendor/simcom.sh:964
-#: vendor/simcom.sh:994
+#: vendor/simcom.sh:1183
+#: vendor/simcom.sh:1213
+#: vendor/simcom.sh:1243
 #: vendor/telit.sh:767
 msgid "TX Power"
 msgstr ""
@@ -3067,8 +3080,8 @@ msgstr ""
 msgid "TX Power (dBm)"
 msgstr ""
 
-#: view/qmodem/network_config.js:408
-#: view/qmodem/network_config.js:485
+#: view/qmodem/network_config.js:418
+#: view/qmodem/network_config.js:495
 msgid "Tele2 (RU)"
 msgstr ""
 
@@ -3076,8 +3089,8 @@ msgstr ""
 msgid "Telegram Bot"
 msgstr ""
 
-#: view/qmodem/network_config.js:385
-#: view/qmodem/network_config.js:462
+#: view/qmodem/network_config.js:395
+#: view/qmodem/network_config.js:472
 msgid "Telekom (DE)"
 msgstr ""
 
@@ -3087,7 +3100,7 @@ msgstr ""
 #: vendor/meig.sh:220
 #: vendor/quectel.sh:338
 #: vendor/sierra.sh:340
-#: vendor/simcom.sh:220
+#: vendor/simcom.sh:244
 #: vendor/telit.sh:144
 msgid "Temperature"
 msgstr ""
@@ -3096,7 +3109,7 @@ msgstr ""
 msgid "The first module loaded into this slot will automatically be assigned this default metric."
 msgstr ""
 
-#: view/qmodem/network_config.js:492
+#: view/qmodem/network_config.js:502
 msgid "The metric value is used to determine the priority of the route. The smaller the value, the higher the priority. Cannot duplicate."
 msgstr ""
 
@@ -3142,9 +3155,9 @@ msgstr ""
 #: vendor/huawei.sh:513
 #: vendor/huawei.sh:539
 #: vendor/huawei.sh:561
-#: vendor/simcom.sh:929
-#: vendor/simcom.sh:956
-#: vendor/simcom.sh:988
+#: vendor/simcom.sh:1178
+#: vendor/simcom.sh:1205
+#: vendor/simcom.sh:1237
 msgid "Tracking area code of cell served by neighbor Enb"
 msgstr ""
 
@@ -3164,7 +3177,7 @@ msgstr ""
 msgid "Tuesday"
 msgstr ""
 
-#: vendor/simcom.sh:1006
+#: vendor/simcom.sh:1255
 msgid "Tx Power"
 msgstr ""
 
@@ -3186,8 +3199,8 @@ msgstr ""
 #: vendor/meig.sh:585
 #: vendor/meig.sh:612
 #: vendor/neoway.sh:743
-#: vendor/simcom.sh:954
-#: vendor/simcom.sh:986
+#: vendor/simcom.sh:1203
+#: vendor/simcom.sh:1235
 msgid "UL Bandwidth"
 msgstr ""
 
@@ -3199,8 +3212,8 @@ msgstr ""
 msgid "UL CA"
 msgstr ""
 
-#: view/qmodem/network_config.js:402
-#: view/qmodem/network_config.js:479
+#: view/qmodem/network_config.js:412
+#: view/qmodem/network_config.js:489
 msgid "UMobile (MY)"
 msgstr ""
 
@@ -3226,8 +3239,8 @@ msgstr ""
 msgid "UTRA Absolute Radio Frequency Channel Number"
 msgstr ""
 
-#: view/qmodem/network_config.js:403
-#: view/qmodem/network_config.js:480
+#: view/qmodem/network_config.js:413
+#: view/qmodem/network_config.js:490
 msgid "Unifi (MY)"
 msgstr ""
 
@@ -3238,7 +3251,7 @@ msgstr ""
 #: view/qmodem/config_advanced.js:302
 #: view/qmodem/network_config.js:227
 #: view/qmodem/network_config.js:262
-#: view/qmodem/network_config.js:659
+#: view/qmodem/network_config.js:669
 msgid "Unknown"
 msgstr ""
 
@@ -3252,7 +3265,7 @@ msgstr ""
 msgid "Unlocking..."
 msgstr ""
 
-#: vendor/simcom.sh:1002
+#: vendor/simcom.sh:1251
 msgid "Uplink Absolute Radio Frequency Channel Number"
 msgstr ""
 
@@ -3285,8 +3298,8 @@ msgstr ""
 msgid "View and modify the modem IMEI number. IMEI must be 15 digits. Changes require modem reboot to take effect."
 msgstr ""
 
-#: view/qmodem/network_config.js:384
-#: view/qmodem/network_config.js:461
+#: view/qmodem/network_config.js:394
+#: view/qmodem/network_config.js:471
 msgid "Vodafone (DE)"
 msgstr ""
 
@@ -3295,7 +3308,7 @@ msgstr ""
 #: vendor/meig.sh:187
 #: vendor/quectel.sh:313
 #: vendor/sierra.sh:333
-#: vendor/simcom.sh:203
+#: vendor/simcom.sh:227
 #: vendor/telit.sh:131
 msgid "Voltage"
 msgstr ""
@@ -3333,15 +3346,15 @@ msgstr ""
 msgid "Writing Storage"
 msgstr ""
 
-#: view/qmodem/network_config.js:401
-#: view/qmodem/network_config.js:478
+#: view/qmodem/network_config.js:411
+#: view/qmodem/network_config.js:488
 msgid "YES (MY)"
 msgstr ""
 
 #: view/qmodem/network_config.js:76
 #: view/qmodem/network_config.js:77
-#: view/qmodem/network_config.js:738
-#: view/qmodem/network_config.js:739
+#: view/qmodem/network_config.js:748
+#: view/qmodem/network_config.js:749
 msgid "Yes"
 msgstr ""
 
@@ -3349,8 +3362,8 @@ msgstr ""
 msgid "Yesterday"
 msgstr ""
 
-#: view/qmodem/network_config.js:409
-#: view/qmodem/network_config.js:486
+#: view/qmodem/network_config.js:419
+#: view/qmodem/network_config.js:496
 msgid "Yota (RU)"
 msgstr ""
 
@@ -3366,8 +3379,8 @@ msgstr ""
 #: view/qmodem/settings.js:379
 #: view/qmodem/settings.js:422
 #: view/qmodem/settings.js:428
-#: view/qmodem/settings.js:479
-#: view/qmodem/settings.js:484
+#: view/qmodem/settings.js:489
+#: view/qmodem/settings.js:494
 msgid "e.g."
 msgstr ""
 
@@ -3375,6 +3388,6 @@ msgstr ""
 msgid "enable modem soft reboot"
 msgstr ""
 
-#: view/qmodem/network_config.js:335
+#: view/qmodem/network_config.js:345
 msgid "quectel-CM will append the DNS server to the resolv.conf file by default.if you do not want to modify the resolv.conf file, please check this option."
 msgstr ""

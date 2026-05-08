@@ -59,15 +59,15 @@ func determineGroup(serverMode config.ServerMode) string {
 		return "root"
 	}
 
-	if processRunning("openclash") {
+	if IsCommandRunning("openclash") {
 		return "nogroup"
 	}
 
-	if processRunning("ShellCrash") {
+	if IsCommandRunning("ShellCrash") {
 		return "shellcrash"
 	}
 
-	if openClashExists() {
+	if IsPackageInstalled("luci-app-openclash") {
 		return "nogroup"
 	}
 
@@ -78,20 +78,6 @@ func determineGroup(serverMode config.ServerMode) string {
 	return "nogroup"
 }
 
-func openClashExists() bool {
-	if !opkgAvailable() {
-		return false
-	}
-
-	cmd := exec.Command("opkg", "list-installed", "luci-app-openclash")
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-
-	return strings.Contains(string(output), "luci-app-openclash")
-}
-
 func shellClashExists() bool {
 	if userExists("shellclash") {
 		return true
@@ -100,17 +86,6 @@ func shellClashExists() bool {
 		return true
 	}
 	return false
-}
-
-func opkgAvailable() bool {
-	_, err := exec.LookPath("opkg")
-	return err == nil
-}
-
-func processRunning(name string) bool {
-	cmd := exec.Command("pgrep", "-f", name)
-	err := cmd.Run()
-	return err == nil
 }
 
 func userExists(username string) bool {

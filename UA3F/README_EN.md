@@ -10,7 +10,7 @@
 
 English | [简体中文](README.md)
 
-UA3F is an HTTP(S) rewriting tool that transparently rewrites HTTP(S) (e.g., User-Agent) as an HTTP, SOCKS5, TPROXY, REDIRECT, or NFQUEUE server.
+UA3F is an HTTP(S) rewriting proxy that transparently rewrites HTTP(S) (e.g., User-Agent) as an HTTP, SOCKS5, TPROXY, REDIRECT, or NFQUEUE server.
 
 - Supports bidirectional rewriting of HTTP(S) Headers and Body
 - Supports HTTP(S) URL redirection: 302, 307, Header
@@ -20,19 +20,36 @@ UA3F is an HTTP(S) rewriting tool that transparently rewrites HTTP(S) (e.g., Use
 - Real-time statistics dashboard with traffic modification monitoring and analysis
 - Multiple deployment options: opkg installation, compilation, and Docker deployment
 - Compatible with Clash Fake-IP & Redir-Host modes for coexistence
-- Supports TTL, TCP Timestamp, TCP Window and IP ID obfuscation
+- Supports L3 rewriting: TTL, IPID, TCP Timestamp, TCP Window
 - Supports Desync fragment reordering and obfuscation to evade Deep Packet Inspection (DPI)
 - Supports eBPF offloading for accelerated forwarding performance
 
-## Deployment
+## Installation
 
-Four deployment methods are available:
+Multiple installation methods are available:
 
-- **OpenWrt Package Installation:**
+- Binary Files and Packages
 
-  Pre-compiled versions for common architectures are available on the [Release](https://github.com/SunBK201/UA3F/releases) page. Download the appropriate version for your device architecture and install it on OpenWrt.
+  Pre-compiled binaries and opkg/apk packages for common architectures are available on the [Release](https://github.com/SunBK201/UA3F/releases) page. Download the appropriate package for your platform and install it directly.
 
-- **OpenWrt Compilation:**
+- Docker Deployment:
+
+  Run as a SOCKS5 proxy:
+
+  ```sh
+  docker run -p 1080:1080 sunbk201/ua3f -f FFF
+  ```
+
+- Source Compilation:
+
+  Build UA3F binary:
+
+  ```sh
+  git clone https://github.com/SunBK201/UA3F.git && cd UA3F/src
+  go build -o ua3f main.go
+  ```
+
+  OpenWrt Compilation:
 
   ```sh
   git clone https://github.com/openwrt/openwrt.git && cd openwrt
@@ -41,32 +58,39 @@ Four deployment methods are available:
   git clone https://github.com/SunBK201/UA3F.git package/UA3F
   make menuconfig # Select Network->Web Servers/Proxies->ua3f
   make download -j$(nproc) V=s
-  make -j$(nproc) || make -j1 || make -j1 V=sc # make package/UA3F/openwrt/compile -j1 V=sc # Compile single package
+  make -j$(nproc) || make -j1 || make -j1 V=sc
+  # make package/UA3F/openwrt/compile -j1 V=sc # Compile single UA3F package
   ```
-
-- **Docker Deployment:**
-
-  ```sh
-  docker run -p 1080:1080 sunbk201/ua3f -f FFF
-  ```
-
-- **Binary Download**
-
-  Pre-compiled binaries for common architectures are available on the [Release](https://github.com/SunBK201/UA3F/releases) page. Download the appropriate binary for your device architecture.
 
 ## Usage
+
+### Command Line Usage
+
+Start UA3F with default configuration:
+
+```sh
+ua3f
+```
+
+Start with a specified configuration file:
+
+```sh
+ua3f -c /path/to/config.yaml
+```
+
+Generate a template configuration file:
+
+```sh
+ua3f -g
+```
+
+For detailed CLI parameters, see [CLI.md](docs/cli.md). For a configuration file example, see [config.yaml](docs/config.yaml).
+
+### OpenWrt LuCI Web Interface
 
 UA3F supports OpenWrt LuCI Web interface. Navigate to Services -> UA3F for configuration.
 
 For detailed tutorial, please visit: [UA3F User Guide](https://sunbk201public.notion.site/UA3F-2a21f32cbb4b80669e04ec1f053d0333)
-
-UA3F supports configuration via a YAML file. You can specify the configuration file path using the `-c` option, and generate a template configuration file using the `-g` option. An example configuration file can be found at [docs/config.yaml](docs/config.yaml).
-
-Device and system information regex reference:
-
-```regex
-(Apple|iPhone|iPad|Macintosh|Mac OS X|Mac|Darwin|Microsoft|Windows|Linux|Android|OpenHarmony|HUAWEI|OPPO|Vivo|XiaoMi|Mobile|Dalvik)
-```
 
 <details>
 <summary>Manual Command Line Launch</summary>
@@ -100,17 +124,27 @@ Command line parameters:
 
 </details>
 
+### API Server
+
+UA3F includes a built-in API Server controller that provides query and control interfaces for UA3F runtime status, configuration rules, and more. Enable it with the `--api-server` parameter:
+
+```sh
+ua3f --api-server <addr:port>
+```
+
+API documentation: [API.md](docs/api.md)
+
 ### Server Mode Description
 
 UA3F supports 5 different server modes, each with unique characteristics:
 
-| Server Mode  | Working Principle  | Clash Dependency | Compatibility | Performance | Coexist with Clash |
-| ------------ | ------------------ | ---------------- | ------------- | ----------- | ------------------ |
-| **HTTP**     | HTTP Proxy         | Yes              | High          | Low         | Yes                |
-| **SOCKS5**   | SOCKS5 Proxy       | Yes              | High          | Low         | Yes                |
-| **TPROXY**   | netfilter TPROXY   | No               | Medium        | Medium      | Yes                |
-| **REDIRECT** | netfilter REDIRECT | No               | Medium        | Medium      | Yes                |
-| **NFQUEUE**  | netfilter NFQUEUE  | No               | Low           | High        | Yes                |
+| Server Mode  | Working Principle  | Clash Dependency | Compatibility | Coexist with Clash |
+| ------------ | ------------------ | ---------------- | ------------- | ------------------ |
+| **HTTP**     | HTTP Proxy         | Yes              | High          | Yes                |
+| **SOCKS5**   | SOCKS5 Proxy       | Yes              | High          | Yes                |
+| **TPROXY**   | netfilter TPROXY   | No               | Medium        | Yes                |
+| **REDIRECT** | netfilter REDIRECT | No               | Medium        | Yes                |
+| **NFQUEUE**  | netfilter NFQUEUE  | No               | Low           | Yes                |
 
 ### Rewrite Strategy Description
 
@@ -150,11 +184,15 @@ Rewrite Actions:
 | DROP          | Drop the request                                              |
 
 URL Redirection Actions:
-| Action Type | Description |
-| ----------------- | ------------------------------- |
-| REDIRECT-302 | Return a 302 redirect response |
-| REDIRECT-307 | Return a 307 redirect response |
+| Action Type     | Description                                                  |
+| --------------- | ------------------------------------------------------------ |
+| REDIRECT-302    | Return a 302 redirect response                               |
+| REDIRECT-307    | Return a 307 redirect response                               |
 | REDIRECT-HEADER | Modify request Header for redirection, transparent to client |
+
+## Desync
+
+See [UA3F Desync](docs/desync.md)
 
 ## Clash Configuration
 

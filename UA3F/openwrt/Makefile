@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=UA3F
-PKG_VERSION:=3.1.0
+PKG_VERSION:=3.4.0
 PKG_RELEASE:=1
 
 # PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
@@ -26,13 +26,13 @@ define Package/ua3f
 	SECTION:=net
 	CATEGORY:=Network
 	SUBMENU:=Web Servers/Proxies
-	TITLE:=Advanced HTTP Rewriting Tool
+	TITLE:=Advanced HTTP Rewriting Proxy
 	URL:=https://github.com/SunBK201/UA3F
 	DEPENDS:=$(GO_ARCH_DEPENDS) +luci-compat +ipset +iptables +iptables-mod-tproxy +iptables-mod-extra +iptables-mod-ipopt +iptables-mod-nfqueue +iptables-mod-conntrack-extra +kmod-nf-conntrack-netlink
 endef
 
 define Package/ua3f/description
-	Advanced HTTP Rewriting Tool
+	Advanced HTTP Rewriting Proxy
 endef
 
 define Build/Prepare
@@ -74,11 +74,6 @@ uci -q commit ua3f
 	uci -q delete ucitrack.ua3f
 	uci -q commit ucitrack
 }
-rm -rf /var/log/ua3f >/dev/null 2>&1
-rm -rf /usr/lib/lua/luci/model/cbi/ua3f >/dev/null 2>&1
-rm -rf /usr/lib/lua/luci/model/cbi/ua3f.lua >/dev/null 2>&1
-rm -rf /usr/lib/lua/luci/controller/ua3f.lua >/dev/null 2>&1
-rm -rf /usr/lib/lua/luci/view/ua3f >/dev/null 2>&1
 endef
 
 $(eval $(call GoBinPackage,ua3f))

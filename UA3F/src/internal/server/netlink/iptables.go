@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/coreos/go-iptables/iptables"
+	"github.com/sunbk201/ua3f/internal/daemon"
 	"github.com/sunbk201/ua3f/internal/netfilter"
 	"github.com/sunbk201/ua3f/internal/server/base"
 	"sigs.k8s.io/knftables"
@@ -64,7 +65,7 @@ func (s *Server) iptSetup() error {
 			}
 		}
 	}
-	if (s.cfg.TCPTimeStamp || s.cfg.TCPInitialWindow) && !s.cfg.IPID {
+	if (s.cfg.TCPTS || s.cfg.TCPWIN) && !s.cfg.IPID {
 		err = s.IptHookTCPSyn(ipt)
 		if err != nil {
 			return err
@@ -118,7 +119,7 @@ func (s *Server) IptSetIP(ipt *iptables.IPTables) error {
 }
 
 func (s *Server) IptSetTTLIngress(ipt *iptables.IPTables) error {
-	if !netfilter.IsCommandAvailable("nft") {
+	if !daemon.IsCommandAvailable("nft") {
 		return errors.New("nft command not available")
 	}
 
