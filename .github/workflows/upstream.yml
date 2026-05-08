@@ -81,7 +81,6 @@ jobs:
         git_clone https://github.com/xptsp/openwrt-twin-bcrypt-js
         git_clone https://github.com/xptsp/luci-app-adguardhome
         git_clone https://github.com/tianiue/luci-app-bypass
-        git_clone https://github.com/nikkinikki-org/OpenWrt-nikki
         git_clone https://github.com/Openwrt-Passwall/openwrt-passwall2
         git_clone https://github.com/frainzy1477/pdnsd
         git_clone https://github.com/CHN-beta/rkp-ipid
@@ -94,6 +93,7 @@ jobs:
         git_clone https://github.com/linkease/istore && mvdir istore/luci
         git_clone https://github.com/linkease/nas-packages-luci && mvdir nas-packages-luci/luci && rm -rf nas-packages-luci
         git_clone https://github.com/linkease/nas-packages && mvdir nas-packages/network/services && rm -rf nas-packages
+        git_sparse_clone main https://github.com/nikkinikki-org/OpenWrt-nikki nikki mihomo-meta mihomo-alpha mihomo-alpha
         git_sparse_clone main https://github.com/nikkinikki-org/OpenWrt-momo momo luci-app-momo
         git_sparse_clone master https://github.com/fcshark-org/openwrt-fchomo luci-app-fchomo
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
