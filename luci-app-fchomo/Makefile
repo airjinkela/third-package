@@ -9,7 +9,6 @@ LUCI_PKGARCH:=all
 LUCI_DEPENDS:= \
 	+mihomo \
 	+ca-bundle \
-	+firewall4 \
 	+kmod-inet-diag \
 	+kmod-nft-tproxy \
 	+yq +wget-ssl +coreutils-timeout \
