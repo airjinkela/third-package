@@ -1,29 +1,12 @@
 local m, s = ...
 
-local api = require "luci.passwall2.api"
-
 local singbox_bin = api.finded_com("sing-box")
 
 if not singbox_bin then
 	return
 end
 
-local fs = api.fs
-
-local singbox_tags = luci.sys.exec(singbox_bin .. " version  | grep 'Tags:' | awk '{print $2}'")
-
 local type_name = "sing-box"
-
-local option_prefix = "singbox_"
-
-local function _n(name)
-	return option_prefix .. name
-end
-
-local ss_method_list = {
-	"none", "aes-128-gcm", "aes-192-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305",
-	"2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"
-}
 
 -- [[ Sing-Box ]]
 
@@ -31,6 +14,23 @@ s.fields["type"]:value(type_name, "Sing-Box")
 if not s.fields["type"].default then
 	s.fields["type"].default = type_name
 end
+
+if s.val["type"] and s.val["type"] ~= type_name then
+	return
+end
+
+local option_prefix = "singbox_"
+
+local function _n(name)
+	return option_prefix .. name
+end
+
+local singbox_tags = luci.sys.exec(singbox_bin .. " version  | grep 'Tags:' | awk '{print $2}'")
+
+local ss_method_list = {
+	"none", "aes-128-gcm", "aes-192-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305",
+	"2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"
+}
 
 o = s:option(Flag, _n("custom"), translate("Use Custom Config"))
 
@@ -157,9 +157,30 @@ if singbox_tags:find("with_quic") then
 end
 
 if singbox_tags:find("with_quic") then
+	o = s:option(Flag, _n("hysteria2_realms"), translate("Realms"))
+	o.default = "0"
+	o:depends({ [_n("protocol")] = "hysteria2"})
+
+	o = s:option(Value, _n("hysteria2_realm_url"), translate("Realm URL"), translate("Example:") .. "realm://public@realm.hy2.io/your-realm-name")
+	o:depends({ [_n("hysteria2_realms")] = "1" })
+
+	o = s:option(DynamicList, _n("hysteria2_realm_stun"), translate("Realm STUN"))
+	o.default = { "stun.sip.us:3478", "stun.nextcloud.com:3478", "global.stun.twilio.com:3478" }
+	o:depends({ [_n("hysteria2_realms")] = "1" })
+
 	o = s:option(Value, _n("hysteria2_auth_password"), translate("Auth Password"))
 	o.password = true
 	o:depends({ [_n("protocol")] = "hysteria2"})
+
+	o = s:option(ListValue, _n("hysteria2_obfs_type"), translate("Obfs Type"))
+	o:value("", translate("Disable"))
+	o:value("salamander")
+	o:value("gecko")
+	o:depends({ [_n("protocol")] = "hysteria2" })
+
+	o = s:option(Value, _n("hysteria2_obfs_password"), translate("Obfs Password"))
+	o:depends({ [_n("hysteria2_obfs_type")] = "salamander" })
+	o:depends({ [_n("hysteria2_obfs_type")] = "gecko" })
 
 	o = s:option(Flag, _n("hysteria2_ignore_client_bandwidth"), translate("Client BBR Flow Control"), translate("Commands the client to use the BBR flow control algorithm"))
 	o.default = 0
@@ -170,14 +191,6 @@ if singbox_tags:find("with_quic") then
 
 	o = s:option(Value, _n("hysteria2_down_mbps"), translate("Max download Mbps"))
 	o:depends({ [_n("protocol")] = "hysteria2", [_n("hysteria2_ignore_client_bandwidth")] = false })
-
-	o = s:option(ListValue, _n("hysteria2_obfs_type"), translate("Obfs Type"))
-	o:value("", translate("Disable"))
-	o:value("salamander")
-	o:depends({ [_n("protocol")] = "hysteria2" })
-
-	o = s:option(Value, _n("hysteria2_obfs_password"), translate("Obfs Password"))
-	o:depends({ [_n("hysteria2_obfs_type")] = "salamander" })
 end
 
 o = s:option(ListValue, _n("d_protocol"), translate("Destination protocol"))
@@ -290,7 +303,7 @@ o:depends({ [_n("protocol")] = "tuic" })
 o:depends({ [_n("protocol")] = "hysteria2" })
 o.validate = function(self, value, t)
 	if value and value ~= "" then
-		if not nixio.fs.access(value) then
+		if not fs.access(value) then
 			return nil, translate("Can't find this file!")
 		else
 			return value
@@ -309,7 +322,7 @@ o:depends({ [_n("protocol")] = "tuic" })
 o:depends({ [_n("protocol")] = "hysteria2" })
 o.validate = function(self, value, t)
 	if value and value ~= "" then
-		if not nixio.fs.access(value) then
+		if not fs.access(value) then
 			return nil, translate("Can't find this file!")
 		else
 			return value
@@ -324,7 +337,7 @@ o:depends({ [_n("tls")] = true, [_n("flow")] = "", [_n("reality")] = false })
 o:depends({ [_n("protocol")] = "naive" })
 o:depends({ [_n("protocol")] = "hysteria" })
 o:depends({ [_n("protocol")] = "tuic" })
-o:depends({ [_n("protocol")] = "hysteria2" })
+o:depends({ [_n("protocol")] = "hysteria2", [_n("hysteria2_realms")] = false })
 
 o = s:option(TextValue, _n("ech_key"), translate("ECH Key"))
 o.default = ""
@@ -452,8 +465,11 @@ o:depends({ [_n("outbound_node")] = "_socks" })
 o:depends({ [_n("outbound_node")] = "_http" })
 
 o = s:option(Value, _n("outbound_node_iface"), translate("Interface"))
-o.default = "eth1"
 o:depends({ [_n("outbound_node")] = "_iface" })
+local netdev_list = api.get_network_devices()
+for _, d in ipairs(netdev_list) do
+	o:value(d.name, d.label)
+end
 
 o = s:option(TextValue, _n("custom_config"), translate("Custom Config"))
 o.rows = 10

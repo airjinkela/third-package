@@ -121,18 +121,7 @@ function parse_filter(cfg) {
 		return cfg;
 }
 
-function get_proxynode(cfg) {
-	if (isEmpty(cfg))
-		return null;
-
-	const label = uci.get(uciconf, cfg, 'label');
-	if (isEmpty(label))
-		die(sprintf("%s's label is missing, please check your configuration.", cfg));
-	else
-		return label;
-}
-
-function get_proxygroup(cfg) {
+function get_proxy(cfg) {
 	if (isEmpty(cfg))
 		return null;
 
@@ -164,7 +153,7 @@ function get_nameserver(cfg, detour) {
 			});
 		} else
 			push(servers, replace(dnsservers[k]?.address || '', /#detour=([^&]+)/, (m, c1) => {
-				return '#' + urlencode(get_proxygroup(detour || c1));
+				return '#' + urlencode(get_proxy(detour || c1));
 			}));
 	}
 
@@ -177,7 +166,7 @@ function parse_entry(cfg) {
 
 	let rule = json(cfg);
 	if (rule.detour)
-		rule.detour = get_proxygroup(rule.detour);
+		rule.detour = get_proxy(rule.detour);
 
 	function _payloadStrategy(payload) {
 		// LOGIC_TYPE,((payload1),(payload2))
@@ -225,7 +214,7 @@ uci.foreach(uciconf, ucichain, (cfg) => {
 		return;
 
 	dialerproxy[identifier] = {
-		detour: get_proxygroup(cfg.chain_tail_group) || get_proxynode(cfg.chain_tail)
+		detour: get_proxy(cfg.chain_tail_group) || get_proxy(cfg.chain_tail)
 	};
 });
 
@@ -349,7 +338,7 @@ uci.foreach(uciconf, uciinbd, (cfg) => {
 	if (cfg.enabled === '0')
 		return;
 
-	push(config.listeners, parseListener(cfg, true, get_proxygroup(cfg.proxy)));
+	push(config.listeners, parseListener(cfg, true, get_proxy(cfg.proxy)));
 });
 /* Tun settings */
 if (match(proxy_mode, /tun/))
@@ -511,6 +500,22 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		down: cfg.hysteria_down_mbps ? cfg.hysteria_down_mbps + ' Mbps' : null,
 		obfs: cfg.hysteria_obfs_type,
 		"obfs-password": cfg.hysteria_obfs_password,
+		"obfs-min-packet-size": strToInt(cfg.hysteria_obfs_min_packet_size),
+		"obfs-max-packet-size": strToInt(cfg.hysteria_obfs_max_packet_size),
+		"realm-opts": cfg.hysteria2_realm === '1' ? {
+			enable: true,
+			"server-url": cfg.hysteria2_realm_server_url,
+			token: cfg.hysteria2_realm_token,
+			"realm-id": cfg.hysteria2_realm_id,
+			"stun-servers": cfg.hysteria2_realm_stun_servers,
+			// @TLS of server-url
+			//sni,
+			//alpn,
+			//"skip-cert-verify",
+			//fingerprint,
+			//certificate,
+			//"private-key"
+		} : null,
 
 		/* SSH */
 		"private-key-passphrase": cfg.ssh_priv_key_passphrase,
@@ -548,6 +553,7 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		/* Snell */
 		psk: cfg.snell_psk,
 		version: cfg.snell_version,
+		reuse: strToBool(cfg.snell_reuse),
 		"obfs-opts": cfg.type === 'snell' ? {
 			mode: cfg.plugin_opts_obfsmode,
 			host: cfg.plugin_opts_host,
@@ -680,6 +686,7 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 					"h-max-request-times": cfg.transport_xhttp_xmux_max_request_times,
 					"h-max-reusable-secs": cfg.transport_xhttp_xmux_max_reusable_secs,
 					"h-keep-alive-period": strToInt(cfg.transport_xhttp_xmux_keep_alive_period)
+				// @download-settings
 				} : null
 			} : null
 		} : {}),
@@ -720,13 +727,14 @@ uci.foreach(uciconf, ucipgrp, (cfg) => {
 		name: cfg.label,
 		type: cfg.type,
 		proxies: [
-			...map(cfg.groups || [], cfg => get_proxygroup(cfg)),
-			...map(cfg.proxies || [], cfg => get_proxynode(cfg))
+			...map(cfg.groups || [], cfg => get_proxy(cfg)),
+			...map(cfg.proxies || [], cfg => get_proxy(cfg))
 		],
 		use: cfg.use,
 		"include-all": strToBool(cfg.include_all),
 		"include-all-proxies": strToBool(cfg.include_all_proxies),
 		"include-all-providers": strToBool(cfg.include_all_providers),
+		"empty-fallback": cfg.empty_fallback ? get_proxy(cfg.empty_fallback) : null,
 		// Url-test fields
 		tolerance: (cfg.type === 'url-test') ? strToInt(cfg.tolerance) ?? 150 : null,
 		// Load-balance fields
@@ -767,7 +775,8 @@ uci.foreach(uciconf, uciprov, (cfg) => {
 			url: cfg.url,
 			"size-limit": bytesizeToByte(cfg.size_limit) || null,
 			interval: (cfg.type === 'http') ? durationToSecond(cfg.interval) ?? 86400 : null,
-			proxy: get_proxygroup(cfg.proxy),
+			proxy: get_proxy(cfg.proxy),
+			"age-secret-key": cfg.age_private_key,
 			header: cfg.header ? json(cfg.header) : null,
 			/* Health fields */
 			"health-check": cfg.health_enable === '0' ? {enable: false} : {
@@ -821,9 +830,10 @@ uci.foreach(uciconf, ucirule, (cfg) => {
 		} : {
 			path: HM_DIR + '/ruleset/' + cfg['.name'],
 			url: cfg.url,
+			"path-in-bundle": cfg.path_in_bundle,
 			"size-limit": bytesizeToByte(cfg.size_limit) || null,
 			interval: (cfg.type === 'http') ? durationToSecond(cfg.interval) ?? 259200 : null,
-			proxy: get_proxygroup(cfg.proxy),
+			proxy: get_proxy(cfg.proxy),
 			header: cfg.header ? json(cfg.header) : null
 		})
 	};

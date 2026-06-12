@@ -67,6 +67,7 @@ fm150-ae | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,mbim
 fm160-cn | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
 fm160-eau | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
 fm160-na | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
+fm170-eau | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis) | ✔ pcie(qmi,mbim)
 fm190w-gl | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi)
 l610-eu | unisoc |✔ usb(ecm,rndis,ncm) | ✘
 nl668 | lte |✔ usb(ecm,rndis,ncm) | ✘
@@ -84,6 +85,7 @@ srm821 | unisoc |✔ usb(ecm,rndis,ncm) | ✘
 Model | Platform | USB  | PCIe 
 --- | --- | --- | ---
 em9190 | qualcomm |✔ usb(mbim,rmnet) | ✔ pcie(mbim,rmnet)
+em9291 | qualcomm |✔ usb(mbim,rmnet) | ✔ pcie(mbim,rmnet)
 mc7354 | lte |✔ usb(qmi) | ✘
 mc7355 | lte |✔ usb(qmi) | ✘
 

@@ -118,7 +118,7 @@ const glossary = {
 		prefmt: '%s_nodedomain',
 		field: 'proxy-server-nameserver-policy',
 	},
-	node: {
+	node: { // outbound
 		prefmt: 'node_%s',
 		field: 'proxies',
 	},
@@ -156,12 +156,14 @@ const inbound_type = [
 	['shadowsocks', _('Shadowsocks') + ' - ' + _('TCP/UDP')],
 	['mieru', _('Mieru') + ' - ' + _('TCP/UDP')],
 	['sudoku', _('Sudoku') + ' - ' + _('TCP')],
+	['snell', _('Snell') + ' - ' + _('TCP')],
 	['vmess', _('VMess') + ' - ' + _('TCP')],
 	['vless', _('VLESS') + ' - ' + _('TCP')],
 	['trojan', _('Trojan') + ' - ' + _('TCP')],
 	['anytls', _('AnyTLS') + ' - ' + _('TCP')],
 	['tuic', _('TUIC') + ' - ' + _('UDP')],
 	['hysteria2', _('Hysteria2') + ' - ' + _('UDP')],
+	['hysteria2-realm', _('Hysteria2 Realm') + ' - ' + _('TCP/UDP')],
 	['trusttunnel', _('TrustTunnel') + ' - ' + _('TCP/UDP')],
 	['tunnel', _('Tunnel') + ' - ' + _('TCP/UDP')]
 ];
@@ -205,12 +207,21 @@ const outbound_type = [
 
 const preset_outbound = {
 	full: [
+		['DIRECT'],      // built-in Outbound
+		['REJECT'],      // built-in Outbound
+		['REJECT-DROP'], // built-in Outbound
+		['PASS'],        // built-in Outbound
+		['PASS-RULE'],   // built-in Outbound
+		['COMPATIBLE'],  // built-in Outbound
+		['GLOBAL']       // built-in Proxy Group
+	],
+	proxy: [ // built-in Outbound
 		['DIRECT'],
 		['REJECT'],
 		['REJECT-DROP'],
 		['PASS'],
-		['COMPATIBLE'],
-		['GLOBAL']
+		['PASS-RULE'],
+		['COMPATIBLE']
 	],
 	direct: [
 		['', _('null')],

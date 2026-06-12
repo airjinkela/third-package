@@ -46,8 +46,8 @@ msgstr "Список правил"
 msgid "Access control"
 msgstr "Контроль доступа"
 
-msgid "Watch Logs"
-msgstr "Просмотр журнала"
+msgid "Runtime Logs"
+msgstr "Журналы выполнения"
 
 msgid "Node Config"
 msgstr "Параметры узла"
@@ -433,6 +433,12 @@ msgstr "Количество предпочтительных узлов"
 msgid "The load balancer selects the optimal number of nodes, and traffic is randomly distributed among them."
 msgstr "Балансировщик выбирает указанное количество наилучших узлов и распределяет трафик между ними случайным образом."
 
+msgid "Failure Tolerance (%)"
+msgstr "Допуск на отказ (%)"
+
+msgid "The maximum acceptable speed test failure rate. For example, 1 means allowing a 1% failure rate."
+msgstr "Максимально допустимый процент отказов при проверке скорости. Например, 1 означает допустимый процент отказов в 1%."
+
 msgid "Shunt"
 msgstr "Shunt (разделение трафика)"
 
@@ -552,9 +558,6 @@ msgstr "Оригинал"
 
 msgid "Transport Plugin"
 msgstr "Плагин транспорта"
-
-msgid "Shadowsocks secondary encryption"
-msgstr "Дополнительное шифрование Shadowsocks"
 
 msgid "global_padding"
 msgstr "Включить padding-заполнение"
@@ -1360,18 +1363,6 @@ msgstr "Используется, если в ссылке на узел это�
 msgid "%s Node Use Type"
 msgstr "Тип использования сервера %s"
 
-msgid "Set the TUIC proxy server ip address"
-msgstr "Указать IP-адрес сервера TUIC"
-
-msgid "TUIC User Password For Connect Remote Server"
-msgstr "Пароль для подключения к удалённому серверу TUIC"
-
-msgid "TUIC UserName For Local Socks"
-msgstr "Имя пользователя для локального SOCKS TUIC"
-
-msgid "TUIC Password For Local Socks"
-msgstr "Пароль для локального SOCKS TUIC"
-
 msgid "UDP relay mode"
 msgstr "Режим ретрансляции UDP"
 
@@ -1384,32 +1375,11 @@ msgstr "Алгоритм контроля перегрузок"
 msgid "Heartbeat interval(second)"
 msgstr "Интервал heartbeat-пакетов (сек)"
 
-msgid "Timeout for establishing a connection to server(second)"
-msgstr "Тайм-аут установки соединения с сервером (сек)"
-
-msgid "Garbage collection interval(second)"
-msgstr "Интервал очистки фрагментов UDP (сек)"
-
-msgid "Garbage collection lifetime(second)"
-msgstr "Время жизни фрагментов UDP на сервере (сек)"
-
 msgid "Disable SNI"
 msgstr "Отключить SNI"
 
 msgid "Enable 0-RTT QUIC handshake"
 msgstr "Включить 0-RTT рукопожатие QUIC"
-
-msgid "TUIC send window"
-msgstr "Окно отправки TUIC (макс. байт без подтверждения: по умолчанию 8 МБ × 2)"
-
-msgid "TUIC receive window"
-msgstr "Окно приёма TUIC (макс. байт без подтверждения: по умолчанию 8 МБ)"
-
-msgid "TUIC Maximum packet size the socks5 server can receive from external, in bytes"
-msgstr "Макс. размер пакета, который SOCKS5-сервер TUIC может принять извне (в байтах)"
-
-msgid "Set if the listening socket should be dual-stack"
-msgstr "Включить поддержку dual-stack для слушающего сокета"
 
 msgid "<br />none: default, no masquerade, data sent is packets with no characteristics.<br />srtp: disguised as an SRTP packet, it will be recognized as video call data (such as FaceTime).<br />utp: packets disguised as uTP will be recognized as bittorrent downloaded data.<br />wechat-video: packets disguised as WeChat video calls.<br />dtls: disguised as DTLS 1.2 packet.<br />wireguard: disguised as a WireGuard packet. (not really WireGuard protocol)<br />dns: Disguising traffic as DNS requests."
 msgstr "<br />none: по умолчанию, без маскировки, данные отправляются обычными пакетами.<br />srtp: маскировка под SRTP — трафик определяется как видеозвонок (например, FaceTime).<br />utp: маскировка под uTP — трафик определяется как BitTorrent.<br />wechat-video: маскировка под видеозвонок WeChat.<br />dtls: маскировка под DTLS 1.2.<br />wireguard: маскировка под WireGuard (не настоящий протокол WireGuard).<br />dns: маскировка трафика под DNS-запросы."
@@ -1687,6 +1657,12 @@ msgstr "Имя TLS-сертификата (CertName)"
 msgid "TLS is used to verify the leaf certificate name."
 msgstr "Используется TLS для проверки имени конечного сертификата."
 
+msgid "TLS Certificate (PEM)"
+msgstr "Сертификат TLS (PEM)"
+
+msgid "Full certificate (chain), PEM format."
+msgstr "Полный сертификат (цепочка), формат PEM."
+
 msgid "ECH Config"
 msgstr "Конфигурация ECH"
 
@@ -1782,6 +1758,9 @@ msgstr "Поддерживаются только узлы типа Xray или 
 
 msgid "Chain Proxy"
 msgstr "Цепочка прокси"
+
+msgid "Outbound Interface"
+msgstr "Исходящий интерфейс"
 
 msgid "Landing Node"
 msgstr "Сервер выхода"
@@ -2306,14 +2285,11 @@ msgstr "Пропуск сервера %s: несовместимость с яд
 msgid "Skip node: %s. Because Sing-Box does not support the %s protocol's %s transmission method, Xray needs to be used instead."
 msgstr "Пропуск сервера: %s. Sing-Box не поддерживает метод передачи %s протокола %s, необходимо использовать Xray."
 
-msgid "Xray unsupport %s plugin."
-msgstr "Xray не поддерживает плагин %s."
+msgid "%s unsupport SS %s plugin."
+msgstr "%s не поддерживает плагин %s."
 
 msgid "Plugin options Incomplete."
 msgstr "Опции плагина указаны не полностью."
-
-msgid "shadowsocks-libev unsupport 2022 encryption."
-msgstr "shadowsocks-libev не поддерживает шифрование 2022."
 
 msgid "Please replace %s to support %s transmission method."
 msgstr "Пожалуйста, замените %s, чтобы поддержать метод передачи %s."

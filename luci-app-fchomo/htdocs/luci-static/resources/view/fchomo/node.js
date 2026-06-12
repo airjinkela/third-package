@@ -14,6 +14,16 @@ document.querySelector('head').appendChild(E('link', {
 	'href': L.resource('view/fchomo/node.css')
 }));
 
+const age_encryption = {
+	keypairs: {
+		types: [
+			['age-x25519', _('age-x25519')],
+			['age-mlkem768-x25519', _('age-mlkem768-x25519')],
+			['age-convert', _('Derive from priv-key')]
+		]
+	}
+};
+
 const CBIBubblesValue = form.DummyValue.extend({
 	__name__: 'CBI.BubblesValue',
 
@@ -94,7 +104,7 @@ const parseProviderYaml = hm.parseYaml.extend({
 		if (!cfg.type)
 			return null;
 
-		// key mapping // 2026/01/17
+		// key mapping // 2026/06/06
 		let config = hm.removeBlankAttrs({
 			id: this.id,
 			label: this.label,
@@ -107,6 +117,7 @@ const parseProviderYaml = hm.parseYaml.extend({
 				size_limit: cfg["size-limit"],
 				interval: cfg.interval,
 				proxy: cfg.proxy ? hm.preset_outbound.full.map(([key, label]) => key).includes(cfg.proxy) ? cfg.proxy : this.calcID(hm.glossary["proxy_group"].field, cfg.proxy) : null,
+				age_private_key: cfg["age-secret-key"],
 				header: cfg.header ? JSON.stringify(cfg.header, null, 2) : null, // string: object
 				/* Health fields */
 				health_enable: this.bool2str(this.jq(cfg, "health-check.enable")), // bool
@@ -221,6 +232,7 @@ return view.extend({
 
 		ss.tab('field_general', _('General fields'));
 		ss.tab('field_vless_encryption', _('Vless Encryption fields'));
+		ss.tab('field_hysteria2_realm', _('Hysteria2 Realm fields'));
 		ss.tab('field_tls', _('TLS fields'));
 		ss.tab('field_transport', _('Transport fields'));
 		ss.tab('field_multiplex', _('Multiplex fields'));
@@ -297,6 +309,7 @@ return view.extend({
 		so = ss.taboption('field_general', form.ListValue, 'hysteria_obfs_type', _('Obfuscate type'));
 		so.value('', _('Disable'));
 		so.value('salamander', _('Salamander'));
+		so.value('gecko', _('Gecko'));
 		so.depends('type', 'hysteria2');
 		so.modalonly = true;
 
@@ -306,6 +319,16 @@ return view.extend({
 		so.rmempty = false;
 		so.depends('type', 'hysteria');
 		so.depends({type: 'hysteria2', hysteria_obfs_type: /.+/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_min_packet_size', _('Obfuscate minimum packet size'));
+		so.placeholder = '512'
+		so.depends('hysteria_obfs_type', 'gecko');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_max_packet_size', _('Obfuscate maximum packet size'));
+		so.placeholder = '1200'
+		so.depends('hysteria_obfs_type', 'gecko');
 		so.modalonly = true;
 
 		/* SSH fields */
@@ -507,8 +530,15 @@ return view.extend({
 		so.value('1', _('v1'));
 		so.value('2', _('v2'));
 		so.value('3', _('v3'));
-		so.default = '3';
+		so.value('4', _('v4'));
+		so.value('5', _('v5'));
+		so.default = '4';
 		so.depends('type', 'snell');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'snell_reuse', _('Connection reuse'));
+		so.default = so.disabled;
+		so.depends({type: 'snell', snell_version: /^(4|5)$/});
 		so.modalonly = true;
 
 		/* TUIC fields */
@@ -874,6 +904,7 @@ return view.extend({
 		so = ss.taboption('field_general', form.Flag, 'udp', _('UDP'));
 		so.default = so.disabled;
 		so.depends({type: /^(direct|socks5|ss|mieru|vmess|vless|trojan|anytls|trusttunnel|masque|wireguard)$/});
+		so.depends({type: 'snell', snell_version: /^(3|4|5)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.Flag, 'uot', _('UoT'),
@@ -955,6 +986,40 @@ return view.extend({
 		so.allowduplicates = true;
 		so.depends('vless_encryption', '1');
 		so.modalonly = true;
+
+		// @ 下面支持填写针对download-settings的上下行分离配置
+
+		/* Hysteria2 Realm fields */
+		so = ss.taboption('field_general', form.Flag, 'hysteria2_realm', _('Realm'));
+		so.default = so.disabled;
+		so.depends('type', 'hysteria2');
+		so.modalonly = true;
+
+		so = ss.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_server_url', _('Rendezvous server'));
+		so.placeholder = 'https://realm.hy2.io';
+		so.rmempty = false;
+		so.depends('hysteria2_realm', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_token', _('Pre-shared key of rendezvous server'));
+		so.placeholder = 'public';
+		so.depends('hysteria2_realm', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_id', _('Realm ID'));
+		so.placeholder = 'my-cabin-1f3a8c2e9b';
+		so.rmempty = false;
+		so.depends('hysteria2_realm', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_hysteria2_realm', form.DynamicList, 'hysteria2_realm_stun_servers', _('STUN servers'));
+		so.datatype = 'hostport';
+		so.default = ['stun.nextcloud.com:3478','stun.sip.us:3478','global.stun.twilio.com:3478'];
+		so.rmempty = false;
+		so.depends('hysteria2_realm', '1');
+		so.modalonly = true;
+
+		// @ 下面支持填写针对server-url的TLS配置(sni, skip-cert-verify, fingerprint, certificate, private-key, alpn)
 
 		/* TLS fields */
 		so = ss.taboption('field_general', form.Flag, 'tls', _('TLS'));
@@ -1465,6 +1530,7 @@ return view.extend({
 							'    interval: 3600\n' +
 							'    proxy: DIRECT\n' +
 							'    size-limit: 0\n' +
+							'    age-secret-key: AGE-SECRET-KEY-1ZTQLLN0A4U3ZTT3DCZKYN0CGZEZQLWX2DFTXUWMT4ZHR0N2UG6LSW9NT0N\n' +
 							'    header:\n' +
 							'      User-Agent:\n' +
 							'      - "mihomo/1.18.3"\n' +
@@ -1472,6 +1538,8 @@ return view.extend({
 							"      - 'application/vnd.github.v3.raw'\n" +
 							'      Authorization:\n' +
 							"      - 'token 1231231'\n" +
+							'      X-Age-Public-Key:\n' +
+							"      - 'age1xh86kh9v23vattr58yedspm3f57sxvnswu9krr6ns438amekx5gsd09uma'\n" +
 							'    health-check:\n' +
 							'      enable: true\n' +
 							'      interval: 600\n' +
@@ -1647,9 +1715,74 @@ return view.extend({
 		//so.editable = true;
 		so.depends('type', 'http');
 
+		so = ss.taboption('field_general', hm.GenValue, 'age_private_key', _('age private key'));
+		so.password = true;
+		so.hm_options = {
+			type: age_encryption.keypairs.types[0][0],
+			params: '',
+			callback: function(result) {
+				const section_id = this.section.section;
+
+				let header = {};
+				try {
+					header = JSON.parse(this.section.formvalue(section_id, 'header').trim());
+				} catch {}
+
+				header['X-Age-Public-Key'] = [result.public_key].filter(Boolean);
+
+				return [
+					[this.option, this.hm_options.params || result.private_key],
+					['age_public_key', result.public_key],
+					['header', JSON.stringify(header, null, 2)]
+				]
+			}
+		}
+		so.renderWidget = function(section_id, option_index, cfgvalue) {
+			let node = form.Value.prototype.renderWidget.call(this, section_id, option_index, cfgvalue);
+			const cbid = this.cbid(section_id) + '._keytype_select';
+			const selected = this.hm_options.type;
+
+			let selectEl = E('select', {
+				id: cbid,
+				class: 'cbi-input-select',
+				style: 'width: 10em',
+			});
+
+			age_encryption.keypairs.types.forEach(([k, v]) => {
+				selectEl.appendChild(E('option', {
+					'value': k,
+					'selected': (k === selected) ? '' : null
+				}, [ v ]));
+			});
+
+			node.appendChild(E('div',  { 'class': 'control-group' }, [
+				selectEl,
+				E('button', {
+					class: 'cbi-button cbi-button-add',
+					click: ui.createHandlerFn(this, () => {
+						this.hm_options.type = document.getElementById(cbid).value;
+						if (this.hm_options.type === 'age-convert')
+							this.hm_options.params = this.formvalue(section_id);
+						else
+							this.hm_options.params = '';
+
+						return hm.handleGenKey.call(this, this.hm_options);
+					})
+				}, [ _('Generate') ])
+			]));
+
+			return node;
+		}
+		so.depends('type', 'http');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', hm.CopyValue, 'age_public_key', _('age public key'));
+		so.depends('type', 'http');
+		so.modalonly = true;
+
 		so = ss.taboption('field_general', hm.TextValue, 'header', _('HTTP header'),
 			_('Custom HTTP header.'));
-		so.placeholder = '{\n  "User-Agent": [\n    "mihomo/1.18.3"\n  ],\n  "Accept": [\n    //"application/vnd.github.v3.raw"\n  ],\n  "Authorization": [\n    //"token 1231231"\n  ]\n}';
+		so.placeholder = '{\n  "User-Agent": [\n    "mihomo/1.18.3"\n  ],\n  "Accept": [\n    //"application/vnd.github.v3.raw"\n  ],\n  "Authorization": [\n    //"token 1231231"\n  ]\n  "X-Age-Public-Key": [\n    //"age1xh86kh9v23vattr58yedspm3f57sxvnswu9krr6ns438amekx5gsd09uma"\n  ]\n}';
 		so.validate = hm.validateJson;
 		so.depends('type', 'http');
 		so.modalonly = true;

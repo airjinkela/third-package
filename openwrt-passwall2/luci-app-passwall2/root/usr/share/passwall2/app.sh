@@ -14,7 +14,6 @@ UTIL_SS=$LUA_UTIL_PATH/util_shadowsocks.lua
 UTIL_XRAY=$LUA_UTIL_PATH/util_xray.lua
 UTIL_NAIVE=$LUA_UTIL_PATH/util_naiveproxy.lua
 UTIL_HYSTERIA2=$LUA_UTIL_PATH/util_hysteria2.lua
-UTIL_TUIC=$LUA_UTIL_PATH/util_tuic.lua
 SINGBOX_BIN=$(first_type $(config_t_get global_app sing_box_file) sing-box)
 XRAY_BIN=$(first_type $(config_t_get global_app xray_file) xray)
 
@@ -84,7 +83,7 @@ run_xray() {
 	json_add_string "loglevel" "${loglevel}"
 
 	[ -n "$flag" ] && {
-		pgrep -af "$TMP_BIN_PATH" | awk -v P1="${flag}" 'BEGIN{IGNORECASE=1}$0~P1{print $1}' | xargs kill -9 >/dev/null 2>&1
+		busybox pgrep -af "$TMP_BIN_PATH" | awk -v P1="${flag}" 'BEGIN{IGNORECASE=1}$0~P1{print $1}' | xargs kill -9 >/dev/null 2>&1
 		json_add_string "flag" "${flag}"
 	}
 	[ -n "$socks_address" ] && [ -n "$socks_port" ] && {
@@ -112,12 +111,12 @@ run_xray() {
 			local direct_ipset_conf=${GLOBAL_ACL_PATH}/dns_${flag}_direct.conf
 			[ -n "$(echo ${flag} | grep '^acl')" ] && direct_ipset_conf=${TMP_ACL_PATH}/${sid}/dns_${flag}_direct.conf
 			if [ "${nftflag}" = "1" ]; then
-				local direct_nftset4="passwall2_${node}_white"
-				local direct_nftset6="passwall2_${node}_white6"
+				local direct_nftset4="psw2_${node}_white"
+				local direct_nftset6="psw2_${node}_white6"
 				local direct_nftset="4#inet#passwall2#${direct_nftset4},6#inet#passwall2#${direct_nftset6}"
 			else
-				local direct_ipset4="passwall2_${node}_white"
-				local direct_ipset6="passwall2_${node}_white6"
+				local direct_ipset4="psw2_${node}_white"
+				local direct_ipset6="psw2_${node}_white6"
 				local direct_ipset="${direct_ipset4},${direct_ipset6}"
 			fi
 			run_ipset_dns_server listen_port=${direct_dnsmasq_listen_port} server_dns=${AUTO_DNS} ipset="${direct_ipset}" nftset="${direct_nftset}" config_file=${direct_ipset_conf}
@@ -225,7 +224,7 @@ run_singbox() {
 	json_add_string "loglevel" "${loglevel}"
 
 	[ -n "$flag" ] && {
-		pgrep -af "$TMP_BIN_PATH" | awk -v P1="${flag}" 'BEGIN{IGNORECASE=1}$0~P1{print $1}' | xargs kill -9 >/dev/null 2>&1
+		busybox pgrep -af "$TMP_BIN_PATH" | awk -v P1="${flag}" 'BEGIN{IGNORECASE=1}$0~P1{print $1}' | xargs kill -9 >/dev/null 2>&1
 		json_add_string "flag" "${flag}"
 	}
 	[ -n "$socks_address" ] && [ -n "$socks_port" ] && {
@@ -251,12 +250,12 @@ run_singbox() {
 			local direct_ipset_conf=${GLOBAL_ACL_PATH}/dns_${flag}_direct.conf
 			[ -n "$(echo ${flag} | grep '^acl')" ] && direct_ipset_conf=${TMP_ACL_PATH}/${sid}/dns_${flag}_direct.conf
 			if [ "${nftflag}" = "1" ]; then
-				local direct_nftset4="passwall2_${node}_white"
-				local direct_nftset6="passwall2_${node}_white6"
+				local direct_nftset4="psw2_${node}_white"
+				local direct_nftset6="psw2_${node}_white6"
 				local direct_nftset="4#inet#passwall2#${direct_nftset4},6#inet#passwall2#${direct_nftset6}"
 			else
-				local direct_ipset4="passwall2_${node}_white"
-				local direct_ipset6="passwall2_${node}_white6"
+				local direct_ipset4="psw2_${node}_white"
+				local direct_ipset6="psw2_${node}_white6"
 				local direct_ipset="${direct_ipset4},${direct_ipset6}"
 			fi
 			run_ipset_dns_server listen_port=${direct_dnsmasq_listen_port} server_dns=${AUTO_DNS} ipset="${direct_ipset}" nftset="${direct_nftset}" config_file=${direct_ipset_conf}
@@ -386,6 +385,10 @@ run_socks() {
 		fi
 	fi
 
+	if [ -n "${error_msg}" ] && ([ -n "$(config_n_get $node hysteria_hop)" ] || [ -n "$(config_n_get $node hysteria2_hop)" ] || [ "$(config_n_get $node hysteria2_realms)" = "1" ]); then
+		unset error_msg
+	fi
+
 	[ -n "${error_msg}" ] && {
 		[ "$bind" != "127.0.0.1" ] && log 1 "$(i18n "Socks node: [%s]%s, start failed %s:%s %s" "${remarks}" "${tmp}" "${bind}" "${socks_port}" "${error_msg}")"
 		return 1
@@ -463,18 +466,6 @@ run_socks() {
 		lua $UTIL_SS gen_config "${_json_arg}" > $config_file
 		[ -z "$no_run" ] && ln_run ${QUEUE_RUN} "$(first_type ssr-local)" "ssr-local" $log_file -c "$config_file" -v -u
 	;;
-	ss)
-		json_add_string "local_addr" "${bind}"
-		json_add_string "local_port" "${socks_port}"
-		json_add_string "mode" "tcp_and_udp"
-		[ -z "$no_run" ] && {
-			local plugin_sh="${config_file%.json}_plugin.sh"
-			json_add_string "plugin_sh" "${plugin_sh}"
-		}
-		local _json_arg="$(json_dump)"
-		lua $UTIL_SS gen_config "${_json_arg}" > $config_file
-		[ -z "$no_run" ] && ln_run ${QUEUE_RUN} "$(first_type ss-local)" "ss-local" $log_file -c "$config_file" -v
-	;;
 	ss-rust)
 		json_add_string "local_socks_address" "${bind}"
 		json_add_string "local_socks_port" "${socks_port}"
@@ -504,13 +495,6 @@ run_socks() {
 		local _json_arg="$(json_dump)"
 		lua $UTIL_HYSTERIA2 gen_config "${_json_arg}" > $config_file
 		[ -z "$no_run" ] && ln_run ${QUEUE_RUN} "$(first_type $(config_t_get global_app hysteria_file))" "hysteria" $log_file -c "$config_file" client
-	;;
-	tuic)
-		json_add_string "local_addr" "${bind}"
-		json_add_string "local_port" "${socks_port}"
-		local _json_arg="$(json_dump)"
-		lua $UTIL_TUIC gen_config "${_json_arg}" > $config_file
-		[ -z "$no_run" ] && ln_run ${QUEUE_RUN} "$(first_type tuic-client)" "tuic-client" $log_file -c "$config_file"
 	;;
 	esac
 
@@ -555,7 +539,7 @@ socks_node_switch() {
 			[ -s "$pf" ] && kill -9 "$(head -n1 "$pf")" >/dev/null 2>&1
 		done
 
-		pgrep -af "$TMP_BIN_PATH" | awk -v P1="${flag}" 'BEGIN{IGNORECASE=1}$0~P1 && !/acl\/|acl_/{print $1}' | xargs kill -9 >/dev/null 2>&1
+		busybox pgrep -af "$TMP_BIN_PATH" | awk -v P1="${flag}" 'BEGIN{IGNORECASE=1}$0~P1 && !/acl\/|acl_/{print $1}' | xargs kill -9 >/dev/null 2>&1
 		for prefix in "" "HTTP_" "HTTP2"; do
 			rm -rf "$TMP_PATH/${prefix}SOCKS_${flag}"*
 		done
@@ -791,7 +775,7 @@ start_socks() {
 
 				# Auto switch logic
 				local enable_autoswitch=$(config_n_get $id enable_autoswitch 0)
-				[ "$enable_autoswitch" = "1" ] && $APP_PATH/socks_auto_switch.sh ${id} > /dev/null 2>&1 &
+				[ "$enable_autoswitch" = "1" ] && { $APP_PATH/socks_auto_switch.sh ${id} > /dev/null 2>&1 & }
 			done
 		}
 	}
@@ -805,14 +789,14 @@ clean_crontab() {
 	sed -i "/$(echo "lua ${APP_PATH}/rule_update.lua log" | sed 's#\/#\\\/#g')/d" /etc/crontabs/root >/dev/null 2>&1
 	sed -i "/$(echo "lua ${APP_PATH}/subscribe.lua start" | sed 's#\/#\\\/#g')/d" /etc/crontabs/root >/dev/null 2>&1
 
-	pgrep -af "${CONFIG}/" | awk '/tasks\.sh/{print $1}' | xargs kill -9 >/dev/null 2>&1
+	busybox pgrep -af "${CONFIG}/" | awk '/tasks\.sh/{print $1}' | xargs kill -9 >/dev/null 2>&1
 	rm -rf /tmp/lock/${CONFIG}_tasks.lock
 }
 
 start_crontab() {
 	if [ "$ENABLED_DEFAULT_ACL" == 1 ] || [ "$ENABLED_ACLS" == 1 ]; then
 		start_daemon=$(config_t_get global_delay start_daemon 0)
-		[ "$start_daemon" = "1" ] && $APP_PATH/monitor.sh > /dev/null 2>&1 &
+		[ "$start_daemon" = "1" ] && { $APP_PATH/monitor.sh > /dev/null 2>&1 & }
 	fi
 
 	[ -f "/tmp/lock/${CONFIG}_cron.lock" ] && {
@@ -982,11 +966,11 @@ run_ipset_chinadns_ng() {
 	
 	[ -n "${ipset}" ] && {
 		set_names=$ipset
-		vps_set_names="passwall2_vps,passwall2_vps6"
+		vps_set_names="psw2_vps,psw2_vps6"
 	}
 	[ -n "${nftset}" ] && {
 		set_names=$(echo ${nftset} | awk -F, '{printf "%s,%s", substr($1,3), substr($2,3)}' | sed 's/#/@/g')
-		vps_set_names="inet@passwall2@passwall2_vps,inet@passwall2@passwall2_vps6"
+		vps_set_names="inet@passwall2@psw2_vps,inet@passwall2@psw2_vps6"
 	}
 	cat <<-EOF > $config_file
 		bind-addr 127.0.0.1
@@ -1028,9 +1012,10 @@ acl_app() {
 	[ -n "$items" ] && {
 		local index=0
 		local item
-		local redir_port dns_port dnsmasq_port
+		local redir_port dns_port dnsmasq_port socks_port
 		local ipt_tmp msg msg2
 		redir_port=11200
+		socks_port=11600
 		dns_port=11300
 		dnsmasq_port=${GLOBAL_DNSMASQ_PORT:-11400}
 		for item in $items; do
@@ -1114,12 +1099,13 @@ acl_app() {
 							set_cache_var "ACL_${sid}_default" "1"
 						else
 							redir_port=$(get_new_port $(expr $redir_port + 1))
+							socks_port=$(get_new_port $(expr $socks_port + 1))
 
 							local type=$(echo $(config_n_get $node type) | tr 'A-Z' 'a-z')
 							if [ -n "${type}" ]; then
 								config_file=$TMP_ACL_PATH/${node}_TCP_UDP_DNS_${redir_port}.json
 								dns_port=$(get_new_port $(expr $dns_port + 1))
-								local acl_socks_port=$(get_new_port $(expr $redir_port + $index))
+								local acl_socks_port=$socks_port
 								local run_func
 								[ -n "${XRAY_BIN}" ] && run_func="run_xray"
 								[ -n "${SINGBOX_BIN}" ] && run_func="run_singbox"
@@ -1162,9 +1148,10 @@ acl_app() {
 }
 
 start() {
-	pgrep -f /tmp/etc/passwall2/bin > /dev/null 2>&1 && {
-		#log_i18n 0 "The program has started. Please stop it and then restart it!"
-		stop
+	busybox pgrep -f /tmp/etc/passwall2/bin > /dev/null 2>&1 && {
+		logger -t PW2-RESTART "Upgrade or overload residue is detected, and the subprocess is being called to perform complete cleaning..."
+		(stop)
+		sleep 2
 	}
 	mkdir -p /tmp/etc /tmp/log $TMP_PATH $TMP_BIN_PATH $TMP_SCRIPT_FUNC_PATH $TMP_ROUTE_PATH $TMP_ACL_PATH $TMP_PATH2
 	get_config
@@ -1241,8 +1228,8 @@ stop() {
 			kill -9 "$pid" >/dev/null 2>&1
 		fi
 	done
-	pgrep -f "sleep.*(6s|9s|58s)" | xargs kill -9 >/dev/null 2>&1
-	pgrep -af "${CONFIG}/" | awk '! /app\.sh|subscribe\.lua|rule_update\.lua|tasks\.sh|server_app\.lua|ujail/{print $1}' | xargs kill -9 >/dev/null 2>&1
+	busybox pgrep -f "sleep.*(6s|9s|58s)" | xargs kill -9 >/dev/null 2>&1
+	busybox pgrep -af "${CONFIG}/" | awk '! /app\.sh|subscribe\.lua|rule_update\.lua|tasks\.sh|server_app\.lua|ujail/{print $1}' | xargs kill -9 >/dev/null 2>&1
 	unset V2RAY_LOCATION_ASSET
 	unset XRAY_LOCATION_ASSET
 	unset SS_SYSTEM_DNS_RESOLVER_FORCE_BUILTIN
