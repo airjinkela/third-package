@@ -367,6 +367,27 @@ function strToTable(str)
 	return loadstring("return " .. str)()
 end
 
+function is_json(str)
+	if str and jsonc.parse(str) then
+		return true
+	end
+	return false
+end
+datatypes.json = is_json
+
+function is_timehhmm(str)
+	local hour, minute = string.match(str, "^(%d?%d):(%d%d)$")
+    if hour and minute then
+        hour = tonumber(hour)
+        minute = tonumber(minute)
+        if hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 then
+            return true
+        end
+    end
+    return false
+end
+datatypes.timehhmm = is_timehhmm
+
 function is_normal_node(e)
 	if e and e.type and e.protocol and (e.protocol == "_balancing" or e.protocol == "_shunt" or e.protocol == "_iface" or e.protocol == "_urltest") then
 		return false
@@ -1368,6 +1389,40 @@ function set_apply_on_parse(map)
 	end
 end
 
+function set_default_cbi()
+	local cbi = require "luci.cbi"
+	if true then
+		--TextValue
+		local TextValue = cbi.TextValue
+		local original_init = TextValue.__init__
+		function TextValue.__init__(self, ...)
+			original_init(self, ...)
+			self.template  = appname .. "/cbi/tvalue"
+		end
+	end
+end
+
+function return_map(map)
+	local cbi = require "luci.cbi"
+	local api = require "luci.passwall2.api"
+	if true then
+		-- header
+		local header = cbi.Template(appname .. "/cbi/header")
+		header.api = api
+		header.config = map.config
+		table.insert(map.children, 1, header)
+	end
+	if true then
+		-- footer
+		local footer = cbi.Template(appname .. "/cbi/footer")
+		footer.api = api
+		footer.config = map.config
+		map:append(footer)
+	end
+
+	return map
+end
+
 function luci_types(id, m, s, type_name, option_prefix)
 	local fv_type
 	local field_type = s.fields["type"]
@@ -1449,7 +1504,7 @@ function luci_types(id, m, s, type_name, option_prefix)
 		end
 	end
 end
-function format_go_time(input)
+function format_go_time(input, default)
 	input = input and trim(input)
 	local N = 0
 	if input and input:match("^%d+$") then
@@ -1467,7 +1522,7 @@ function format_go_time(input)
 		end
 	end
 	if N <= 0 then
-		return "0s"
+		return default or "0s"
 	end
 	local result = ""
 	local h = math.floor(N / 3600)
@@ -1509,11 +1564,22 @@ end
 function match_node_rule(name, rule)
 	if not name then return false end
 	if not rule or rule == "" then return true end
+	-- split rule by || into OR groups
+	local function split_or(expr)
+		local t = {}
+		for part in (expr .. "||"):gmatch("(.-)%|%|") do
+			part = trim(part)
+			if part ~= "" then
+				table.insert(t, part)
+			end
+		end
+		return t
+	end
 	-- split rule by &&
 	local function split_and(expr)
 		local t = {}
-		for part in expr:gmatch("[^&]+") do
-			part = part:gsub("^%s+", ""):gsub("%s+$", "")
+		for part in (expr .. "&&"):gmatch("(.-)%&%&") do
+			part = trim(part)
 			if part ~= "" then
 				table.insert(t, part)
 			end
@@ -1544,13 +1610,72 @@ function match_node_rule(name, rule)
 		-- contains
 		return str:find(cond, 1, true) ~= nil
 	end
-	-- AND logic
-	for _, cond in ipairs(split_and(rule)) do
-		if not match_cond(name, cond) then
-			return false
+	-- check if all conditions in AND group match
+	local function match_and_group(str, group_expr)
+		for _, cond in ipairs(split_and(group_expr)) do
+			if not match_cond(str, cond) then
+				return false
+			end
+		end
+		return true
+	end
+	-- OR logic: return true if any group matches
+	for _, group in ipairs(split_or(rule)) do
+		if match_and_group(name, group) then
+			return true
 		end
 	end
-	return true
+	return false
+end
+
+local normal_nodes = {}
+function get_batch_nodes(node)
+	if #normal_nodes == 0 then
+		for k, e in ipairs(get_valid_nodes()) do
+			if e.node_type == "normal" and (not e.chain_proxy or e.chain_proxy == "") then
+				normal_nodes[#normal_nodes + 1] = {
+					id = e[".name"],
+					remarks = e["remarks"],
+					group = e["group"]
+				}
+			end
+		end
+	end
+	if not node.node_group or node.node_group == "" then return {} end
+	local nodes = {}
+	for g in node.node_group:gmatch("%S+") do
+		g = UrlDecode(g)
+		for k, v in pairs(normal_nodes) do
+			local gn = (v.group and v.group ~= "") and v.group or "default"
+			if gn:lower() == g:lower() and match_node_rule(v.remarks, node.node_match_rule) then
+				nodes[#nodes + 1] = v.id
+			end
+		end
+	end
+	return nodes
+end
+
+function get_socks_backup_nodes(id)
+	id = trim(id)
+	if id == "" then return "" end
+	local socks = uci:get_all(appname, id)
+	local nodes
+	if socks.backup_node_add_mode and socks.backup_node_add_mode == "batch" then
+		local node = {}
+		node.node_group = socks.backup_node_group
+		node.node_match_rule = socks.backup_node_match_rule
+		nodes = get_batch_nodes(node)
+	else
+		nodes = socks.autoswitch_backup_node
+	end
+	local backup_nodes, seen = {}, {}
+	for _, v in ipairs(nodes or {}) do
+		if v ~= socks.node and not seen[v] then
+			seen[v] = true
+			table.insert(backup_nodes, v)
+		end
+	end
+	return table.concat(backup_nodes, " ")
 end
 
 function get_core(field, candidates)
@@ -1576,6 +1701,26 @@ function cleanEmptyTables(t)
 		end
 	end
 	return next(t) and t or nil
+end
+
+function fetch_cert_sha256(host, port, sni, timeout)
+	if not host then return "" end
+	port = tonumber(port) or 443
+	sni = sni or host
+	timeout = tonumber(timeout) or 5
+	local cmd = string.format(
+		"timeout %d openssl s_client -connect %s:%d -servername %s -showcerts </dev/null 2>/dev/null " ..
+		"| awk 'BEGIN{c=0}/BEGIN CERT/{c++} c==1{print} /END CERT/{if(c==1)exit}' " ..
+		"| openssl x509 -outform der 2>/dev/null " ..
+		"| sha256sum 2>/dev/null",
+		timeout, host, port, sni
+	)
+	local out = trim(sys.exec(cmd))
+	local fp = out:match("^([0-9a-fA-F]+)")
+	if not fp or fp:lower():match("^e3b0c44298fc1c149afbf4c8996fb924") then
+		return ""
+	end
+	return fp:upper()
 end
 
 function get_dnsmasq_server_domain()
@@ -1610,28 +1755,36 @@ function get_dnsmasq_server_domain()
 end
 
 function parse_realm_uri(uri)
-	if type(uri) ~= "string" then return nil end
-	-- realm://token@server/realm_id?query
-	local token, server_url, realm_id, query = trim(uri):match("^realm://([^@]+)@([^/]+)/([^?]*)%??(.*)$")
+	uri = trim(uri)
+	if uri == "" then return nil end
+	-- realm[+http]://token@server/realm_id?query
+	local scheme = (uri:match("^realm%+http://") and "realm+http") or (uri:match("^realm://") and "realm")
+	if not scheme then return nil end
+	uri = uri:gsub("^realm%+http://", ""):gsub("^realm://", "")
+	local token, server_url, realm_id, query = uri:match("^([^@]+)@([^/]+)/([^?]*)%??(.*)$")
 	if not token or not server_url or not realm_id then return nil end
 	realm_id = realm_id:gsub("/+$", "")
+	local address, port = server_url:match("^%[([^%]]+)%]:(%d+)$") --ipv6:port
+	if not address then
+		address, port = server_url:match("^([^:]+):(%d+)$") --ipv4[domain]:port
+	end
+	address = address or server_url:match("^%[([^%]]+)%]$") or server_url
+	port = tonumber(port) or (scheme == "realm+http" and 80 or 443)
 	local realm = {
+		scheme = scheme,
 		token = token,
 		server_url = server_url,
+		address = address,
+		port = port,
 		realm_id = realm_id
 	}
-	-- 解析 query 中的 stun=
-	if query and query ~= "" then
-		local stun_servers = {}
-		for key, value in query:gmatch("([^&=?]+)=([^&]+)") do
-			if key == "stun" and value ~= "" then
-				stun_servers[#stun_servers + 1] = value
-			end
-		end
-		if #stun_servers > 0 then
-			realm.stun_servers = stun_servers
-		end
+	-- Parse stun= in the query
+	local stun_servers
+	for v in (query or ""):gmatch("[Ss][Tt][Uu][Nn]=([^&]+)") do
+		stun_servers = stun_servers or {}
+		stun_servers[#stun_servers + 1] = v
 	end
+	realm.stun_servers = stun_servers
 	return realm
 end
 

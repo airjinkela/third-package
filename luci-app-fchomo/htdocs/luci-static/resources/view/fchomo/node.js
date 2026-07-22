@@ -28,7 +28,7 @@ const CBIBubblesValue = form.DummyValue.extend({
 	__name__: 'CBI.BubblesValue',
 
 	load(section_id) {
-		const uciconfig = this.config || this.section.configthis.config || this.map.config;
+		const uciconfig = this.config || this.section.config || this.map.config;
 		const type = uci.get(uciconfig, section_id, 'type');
 		const detour = uci.get(uciconfig, section_id, 'chain_tail_group') || uci.get(uciconfig, section_id, 'chain_tail');
 
@@ -104,7 +104,7 @@ const parseProviderYaml = hm.parseYaml.extend({
 		if (!cfg.type)
 			return null;
 
-		// key mapping // 2026/06/06
+		// key mapping // 2026/07/18
 		let config = hm.removeBlankAttrs({
 			id: this.id,
 			label: this.label,
@@ -116,7 +116,7 @@ const parseProviderYaml = hm.parseYaml.extend({
 				url: cfg.url,
 				size_limit: cfg["size-limit"],
 				interval: cfg.interval,
-				proxy: cfg.proxy ? hm.preset_outbound.full.map(([key, label]) => key).includes(cfg.proxy) ? cfg.proxy : this.calcID(hm.glossary["proxy_group"].field, cfg.proxy) : null,
+				proxy: cfg.proxy ? hm.preset_outbound.direct.map(([key, label]) => key).includes(cfg.proxy) ? cfg.proxy : this.calcID(hm.glossary["proxy_group"].field, cfg.proxy) : null,
 				age_private_key: cfg["age-secret-key"],
 				header: cfg.header ? JSON.stringify(cfg.header, null, 2) : null, // string: object
 				/* Health fields */
@@ -130,13 +130,16 @@ const parseProviderYaml = hm.parseYaml.extend({
 				override_prefix: this.jq(cfg, "override.additional-prefix"),
 				override_suffix: this.jq(cfg, "override.additional-suffix"),
 				override_replace: (this.jq(cfg, "override.proxy-name") || []).map((obj) => JSON.stringify(obj)), // array.string: array.object
-				// Configuration Items
+				// Programmable replacement
+				override_expr: this.jq(cfg, "override.override-expr") || [], // array.string
+				// Other configuration items
 				override_tfo: this.bool2str(this.jq(cfg, "override.tfo")), // bool
 				override_mptcp: this.bool2str(this.jq(cfg, "override.mptcp")), // bool
 				override_udp: this.bool2str(this.jq(cfg, "override.udp")), // bool
 				override_uot: this.bool2str(this.jq(cfg, "override.udp-over-tcp")), // bool
 				override_up: this.jq(cfg, "override.up"),
 				override_down: this.jq(cfg, "override.down"),
+				override_name_cert_verify: this.jq(cfg, "override.name-cert-verify"),
 				override_skip_cert_verify: this.bool2str(this.jq(cfg, "override.skip-cert-verify")), // bool
 				//override_dialer_proxy: this.jq(cfg, "override.dialer-proxy"),
 				override_interface_name: this.jq(cfg, "override.interface-name"),
@@ -211,7 +214,7 @@ return view.extend({
 	render(data) {
 		let m, s, o, ss, so;
 
-		m = new form.Map('fchomo', _('Edit node'));
+		m = new form.Map('fchomo', _('Edit outbound'));
 
 		s = m.section(form.NamedSection, 'global', 'fchomo');
 
@@ -231,6 +234,7 @@ return view.extend({
 		ss.hm_lowcase_only = true;
 
 		ss.tab('field_general', _('General fields'));
+		ss.tab('field_plugin', _('Plugin fields'));
 		ss.tab('field_vless_encryption', _('Vless Encryption fields'));
 		ss.tab('field_hysteria2_realm', _('Hysteria2 Realm fields'));
 		ss.tab('field_tls', _('TLS fields'));
@@ -247,7 +251,7 @@ return view.extend({
 		so.default = so.enabled;
 		so.editable = true;
 
-		so = ss.taboption('field_general', form.ListValue, 'type', _('Type'));
+		so = ss.taboption('field_general', form.RichListValue, 'type', _('Type'));
 		so.default = hm.outbound_type[0][0];
 		hm.outbound_type.forEach((res) => {
 			so.value.apply(so, res);
@@ -256,12 +260,45 @@ return view.extend({
 		so = ss.taboption('field_general', form.Value, 'server', _('Server address'));
 		so.datatype = 'host';
 		so.rmempty = false;
-		so.depends({type: 'direct', '!reverse': true});
+		so.depends({type: /^(rematch|direct)$/, '!reverse': true});
 
 		so = ss.taboption('field_general', form.Value, 'port', _('Port'));
 		so.datatype = 'port';
 		so.rmempty = false;
-		so.depends({type: /^(direct|mieru)$/, '!reverse': true});
+		so.depends({type: /^(rematch|direct|mieru)$/, '!reverse': true});
+
+		/* Rematch fields */
+		// https://github.com/MetaCubeX/mihomo/pull/2862
+		so = ss.taboption('field_general', form.Value, 'target_rematch_name', _('REMATCH-NAME marking'));
+		so.value('rematch1');
+		so.validate = function(section_id, value) {
+			const target_sub_rule = this.section.getOption('target_sub_rule').formvalue(section_id);
+
+			if (!value && !target_sub_rule)
+				return _('Expecting: Least one of %s or %s.').format(_('REMATCH-NAME marking'), _('Use sub rule'));
+
+			return hm.validateAuthUsername.call(this, section_id, value);
+		};
+		so.depends('type', 'rematch');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.ListValue, 'target_sub_rule', _('Use sub rule'));
+		so.load = function(section_id) {
+			return hm.loadLabel.call(this, [
+				['', _('-- Please choose --')],
+				...hm.loadLabelValues(this.config, 'subrule-group')
+			], section_id);
+		}
+		so.validate = function(section_id, value) {
+			const target_rematch_name = this.section.getOption('target_rematch_name').formvalue(section_id);
+
+			if (!value && !target_rematch_name)
+				return _('Expecting: Least one of %s or %s.').format(_('REMATCH-NAME marking'), _('Use sub rule'));
+
+			return true;
+		};
+		so.depends('type', 'rematch');
+		so.modalonly = true;
 
 		/* HTTP / SOCKS fields */
 		/* hm.validateAuth */
@@ -273,82 +310,13 @@ return view.extend({
 		so = ss.taboption('field_general', form.Value, 'password', _('Password'));
 		so.password = true;
 		so.validate = hm.validateAuthPassword;
-		so.depends({type: /^(http|socks5|mieru|trojan|anytls|hysteria2|tuic|trusttunnel|ssh)$/});
+		so.depends({type: /^(http|socks5|mieru|trojan|anytls|tuic|hysteria2|trusttunnel|ssh)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', hm.TextValue, 'headers', _('HTTP header'));
 		so.placeholder = '{\n  "User-Agent": [\n    "mihomo/1.18.3"\n  ],\n  "Authorization": [\n    //"token 1231231"\n  ]\n}';
 		so.validate = hm.validateJson;
 		so.depends('type', 'http');
-		so.modalonly = true;
-
-		/* Hysteria / Hysteria2 fields */
-		so = ss.taboption('field_general', form.DynamicList, 'hysteria_ports', _('Ports pool'));
-		so.datatype = 'or(port, portrange)';
-		so.depends({type: /^(hysteria|hysteria2)$/});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'hysteria_hop_interval', _('Port hop interval'),
-			_('In seconds. <code>%s</code> will be used if empty.').format('30'));
-		so.placeholder = '15 OR 15-30';
-		so.depends('type', 'hysteria2');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'hysteria_up_mbps', _('Max upload speed'),
-			_('In Mbps.'));
-		so.datatype = 'uinteger';
-		so.depends({type: /^(hysteria|hysteria2)$/});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'hysteria_down_mbps', _('Max download speed'),
-			_('In Mbps.'));
-		so.datatype = 'uinteger';
-		so.depends({type: /^(hysteria|hysteria2)$/});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.ListValue, 'hysteria_obfs_type', _('Obfuscate type'));
-		so.value('', _('Disable'));
-		so.value('salamander', _('Salamander'));
-		so.value('gecko', _('Gecko'));
-		so.depends('type', 'hysteria2');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_password', _('Obfuscate password'),
-			_('Enabling obfuscation will make the server incompatible with standard QUIC connections, losing the ability to masquerade with HTTP/3.'));
-		so.password = true;
-		so.rmempty = false;
-		so.depends('type', 'hysteria');
-		so.depends({type: 'hysteria2', hysteria_obfs_type: /.+/});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_min_packet_size', _('Obfuscate minimum packet size'));
-		so.placeholder = '512'
-		so.depends('hysteria_obfs_type', 'gecko');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_max_packet_size', _('Obfuscate maximum packet size'));
-		so.placeholder = '1200'
-		so.depends('hysteria_obfs_type', 'gecko');
-		so.modalonly = true;
-
-		/* SSH fields */
-		so = ss.taboption('field_general', form.TextValue, 'ssh_priv_key', _('Priv-key'));
-		so.depends('type', 'ssh');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'ssh_priv_key_passphrase', _('Priv-key passphrase'));
-		so.password = true;
-		so.depends({type: 'ssh', ssh_priv_key: /.+/});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.DynamicList, 'ssh_host_key_algorithms', _('Host-key algorithms'));
-		so.placeholder = 'rsa';
-		so.depends('type', 'ssh');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.DynamicList, 'ssh_host_key', _('Host-key'));
-		so.placeholder = 'ssh-rsa AAAAB3NzaC1yc2EAA...';
-		so.depends({type: 'ssh', ssh_host_key_algorithms: /.+/});
 		so.modalonly = true;
 
 		/* Shadowsocks fields */
@@ -541,115 +509,6 @@ return view.extend({
 		so.depends({type: 'snell', snell_version: /^(4|5)$/});
 		so.modalonly = true;
 
-		/* TUIC fields */
-		so = ss.taboption('field_general', form.Value, 'uuid', _('UUID'));
-		so.rmempty = false;
-		so.validate = hm.validateUUID;
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'tuic_ip', _('IP override'),
-			_('Override the IP address of the server that DNS response.'));
-		so.datatype = 'ipaddr(1)';
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.ListValue, 'tuic_udp_relay_mode', _('UDP relay mode'),
-			_('UDP packet relay mode.'));
-		so.default = 'native';
-		so.value('native', _('Native UDP'));
-		so.value('quic', _('QUIC'));
-		so.depends({type: 'tuic', tuic_udp_over_stream: '0'});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Flag, 'tuic_udp_over_stream', _('UDP over stream'),
-			_('This is the TUIC port of the SUoT protocol, designed to provide a QUIC stream based UDP relay mode that TUIC does not provide.'));
-		so.default = so.disabled;
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.ListValue, 'tuic_udp_over_stream_version', _('UDP over stream version'));
-		so.value('1', _('v1'));
-		so.depends({type: 'tuic', tuic_udp_over_stream: '1'});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'tuic_max_udp_relay_packet_size', _('Max UDP relay packet size'));
-		so.datatype = 'uinteger';
-		so.placeholder = '1500';
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Flag, 'tuic_reduce_rtt', _('Enable 0-RTT handshake'),
-			_('Enable 0-RTT QUIC connection handshake on the client side. This is not impacting much on the performance, as the protocol is fully multiplexed.<br/>' +
-				'Disabling this is highly recommended, as it is vulnerable to replay attacks.'));
-		so.default = so.disabled;
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'tuic_heartbeat', _('Heartbeat interval'),
-			_('In millisecond.'));
-		so.datatype = 'uinteger';
-		so.placeholder = '10000';
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'tuic_request_timeout', _('Request timeout'),
-			_('In millisecond.'));
-		so.datatype = 'uinteger';
-		so.placeholder = '8000';
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'tuic_max_open_streams', _('Max open streams'));
-		so.datatype = 'uinteger';
-		so.placeholder = '100';
-		so.depends('type', 'tuic');
-		so.modalonly = true;
-
-		/* Trojan fields */
-		so = ss.taboption('field_general', form.Flag, 'trojan_ss_enabled', _('Shadowsocks encrypt'));
-		so.default = so.disabled;
-		so.depends('type', 'trojan');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.ListValue, 'trojan_ss_chipher', _('Shadowsocks chipher'));
-		so.default = hm.trojan_cipher_methods[0][0];
-		hm.trojan_cipher_methods.forEach((res) => {
-			so.value.apply(so, res);
-		})
-		so.depends({type: 'trojan', trojan_ss_enabled: '1'});
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'trojan_ss_password', _('Shadowsocks password'));
-		so.password = true;
-		so.validate = function(section_id, value) {
-			const encmode = this.section.getOption('trojan_ss_chipher').formvalue(section_id);
-			return hm.validateShadowsocksPassword.call(this, encmode, section_id, value);
-		}
-		so.depends({type: 'trojan', trojan_ss_enabled: '1'});
-		so.modalonly = true;
-
-		/* AnyTLS fields */
-		so = ss.taboption('field_general', form.Value, 'anytls_idle_session_check_interval', _('Idle session check interval'),
-			_('In seconds.'));
-		so.placeholder = '30';
-		so.validate = hm.validateTimeDuration;
-		so.depends('type', 'anytls');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'anytls_idle_session_timeout', _('Idle session timeout'),
-			_('In seconds.'));
-		so.placeholder = '30';
-		so.validate = hm.validateTimeDuration;
-		so.depends('type', 'anytls');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'anytls_min_idle_session', _('Min of idle sessions to keep'));
-		so.datatype = 'uinteger';
-		so.placeholder = '0';
-		so.depends('type', 'anytls');
-		so.modalonly = true;
-
 		/* VMess / VLESS fields */
 		so = ss.taboption('field_general', form.Value, 'vmess_uuid', _('UUID'));
 		so.rmempty = false;
@@ -700,51 +559,215 @@ return view.extend({
 		so.depends({type: /^(vmess|vless)$/});
 		so.modalonly = true;
 
-		/* Masque fields */
-		so = ss.taboption('field_general', form.Value, 'masque_private_key', _('Private key'),
-			_('Base64 encoded ECDSA private key on the NIST P-256 curve.'));
-		so.password = true;
-		so.validate = L.bind(hm.validateBase64Key, so, 164);
-		so.rmempty = false;
-		so.depends('type', 'masque');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'masque_endpoint_public_key', _('Endpoint pubkic key'),
-			_('Base64 encoded ECDSA public key on the NIST P-256 curve.'));
-		so.validate = L.bind(hm.validateBase64Key, so, 124);
-		so.rmempty = false;
-		so.depends('type', 'masque');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'masque_ip', _('Local address'),
-			_('The %s address used by local machine in the Cloudflare WARP network.').format('IPv4'));
-		so.datatype = 'ip4addr(1)';
-		so.placeholder = '172.16.0.2';
-		so.rmempty = false;
-		so.depends('type', 'masque');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'masque_ipv6', _('Local IPv6 address'),
-			_('The %s address used by local machine in the Cloudflare WARP network.').format('IPv6'));
-		so.datatype = 'ip6addr(1)';
-		so.depends('type', 'masque');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'masque_mtu', _('MTU'));
-		so.datatype = 'range(0,9000)';
-		so.placeholder = '1280';
-		so.depends('type', 'masque');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Flag, 'masque_remote_dns_resolve', _('Remote DNS resolve'),
-			_('Force DNS remote resolution.'));
+		/* Trojan fields */
+		so = ss.taboption('field_general', form.Flag, 'trojan_ss_enabled', _('Shadowsocks encrypt'));
 		so.default = so.disabled;
-		so.depends('type', 'masque');
+		so.depends('type', 'trojan');
 		so.modalonly = true;
 
-		so = ss.taboption('field_general', form.DynamicList, 'masque_dns', _('DNS server'));
-		so.datatype = 'or(host, hostport)';
-		so.depends('masque_remote_dns_resolve', '1');
+		so = ss.taboption('field_general', form.ListValue, 'trojan_ss_chipher', _('Shadowsocks chipher'));
+		so.default = hm.trojan_cipher_methods[0][0];
+		hm.trojan_cipher_methods.forEach((res) => {
+			so.value.apply(so, res);
+		})
+		so.depends({type: 'trojan', trojan_ss_enabled: '1'});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'trojan_ss_password', _('Shadowsocks password'));
+		so.password = true;
+		so.validate = function(section_id, value) {
+			const encmode = this.section.getOption('trojan_ss_chipher').formvalue(section_id);
+			return hm.validateShadowsocksPassword.call(this, encmode, section_id, value);
+		}
+		so.depends({type: 'trojan', trojan_ss_enabled: '1'});
+		so.modalonly = true;
+
+		/* AnyTLS fields */
+		so = ss.taboption('field_general', form.Value, 'anytls_idle_session_check_interval', _('Idle session check interval'),
+			_('In seconds.'));
+		so.placeholder = '30';
+		so.validate = hm.validateTimeDuration;
+		so.depends('type', 'anytls');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'anytls_idle_session_timeout', _('Idle session timeout'),
+			_('In seconds.'));
+		so.placeholder = '30';
+		so.validate = hm.validateTimeDuration;
+		so.depends('type', 'anytls');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'anytls_min_idle_session', _('Min of idle sessions to keep'));
+		so.datatype = 'uinteger';
+		so.placeholder = '0';
+		so.depends('type', 'anytls');
+		so.modalonly = true;
+
+		/* TUIC fields */
+		so = ss.taboption('field_general', form.Value, 'uuid', _('UUID'));
+		so.rmempty = false;
+		so.validate = hm.validateUUID;
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'tuic_ip', _('IP override'),
+			_('Override the IP address of the server that DNS response.'));
+		so.datatype = 'ipaddr(1)';
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.ListValue, 'tuic_udp_relay_mode', _('UDP relay mode'),
+			_('UDP packet relay mode.'));
+		so.default = 'native';
+		so.value('native', _('Native UDP'));
+		so.value('quic', _('QUIC'));
+		so.depends({type: 'tuic', tuic_udp_over_stream: '0'});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'tuic_udp_over_stream', _('UDP over stream'),
+			_('This is the TUIC port of the SUoT protocol, designed to provide a QUIC stream based UDP relay mode that TUIC does not provide.'));
+		so.default = so.disabled;
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.ListValue, 'tuic_udp_over_stream_version', _('UDP over stream version'));
+		so.value('1', _('v1'));
+		so.depends({type: 'tuic', tuic_udp_over_stream: '1'});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'tuic_max_udp_relay_packet_size', _('Max UDP relay packet size'));
+		so.datatype = 'uinteger';
+		so.placeholder = '1500';
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'tuic_fast_open', _('Enable fast open'));
+		so.default = so.disabled;
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'tuic_reduce_rtt', _('Enable 0-RTT handshake'),
+			_('Enable 0-RTT QUIC connection handshake on the client side. This is not impacting much on the performance, as the protocol is fully multiplexed.<br/>' +
+				'Disabling this is highly recommended, as it is vulnerable to replay attacks.'));
+		so.default = so.disabled;
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'tuic_heartbeat', _('Heartbeat interval'),
+			_('In millisecond.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '10000';
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'tuic_request_timeout', _('Request timeout'),
+			_('In millisecond.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '8000';
+		so.depends('type', 'tuic');
+		so.modalonly = true;
+
+		/* Brutal fields */
+		so = ss.taboption('field_general', form.Value, 'brutal_up_mbps', _('Max upload speed'),
+			_('In Mbps.'));
+		so.datatype = 'uinteger';
+		so.depends({type: /^(hysteria|hysteria2|shadowquic)$/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'brutal_down_mbps', _('Max download speed'),
+			_('In Mbps.'));
+		so.datatype = 'uinteger';
+		so.depends({type: /^(hysteria|hysteria2|shadowquic)$/});
+		so.modalonly = true;
+
+		/* Hysteria / Hysteria2 fields */
+		so = ss.taboption('field_general', form.DynamicList, 'hysteria_ports', _('Ports pool'));
+		so.datatype = 'or(port, portrange)';
+		so.depends({type: /^(hysteria|hysteria2)$/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'hysteria_hop_interval', _('Port hop interval'),
+			_('In seconds. <code>%s</code> will be used if empty.').format('30'));
+		so.placeholder = '15 OR 15-30';
+		so.depends('type', 'hysteria2');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.ListValue, 'hysteria_obfs_type', _('Obfuscate type'));
+		so.value('', _('Disable'));
+		so.value('salamander', _('Salamander'));
+		so.value('gecko', _('Gecko'));
+		so.depends('type', 'hysteria2');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_password', _('Obfuscate password'),
+			_('Enabling obfuscation will make the server incompatible with standard QUIC connections, losing the ability to masquerade with HTTP/3.'));
+		so.password = true;
+		so.rmempty = false;
+		so.depends('type', 'hysteria');
+		so.depends({type: 'hysteria2', hysteria_obfs_type: /.+/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_min_packet_size', _('Obfuscate minimum packet size'));
+		so.placeholder = '512'
+		so.depends('hysteria_obfs_type', 'gecko');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'hysteria_obfs_max_packet_size', _('Obfuscate maximum packet size'));
+		so.placeholder = '1200'
+		so.depends('hysteria_obfs_type', 'gecko');
+		so.modalonly = true;
+
+		/* ShadowQUIC fields */
+		so = ss.taboption('field_general', form.DynamicList, 'shadowquic_quic_versions', _('QUIC versions'),
+			_('Support %s, default %s.').format('v1/v2', 'v1'));
+		so.placeholder = 'v1';
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'shadowquic_udp_over_stream', _('UDP over stream'));
+		so.default = so.disabled;
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'shadowquic_zero_rtt', _('QUIC based 0-RTT'));
+		so.default = so.disabled;
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'shadowquic_heartbeat', _('Heartbeat interval'),
+			_('In millisecond.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '10000';
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'shadowquic_cwnd', _('Initial congestion window size'));
+		so.datatype = 'uinteger';
+		so.placeholder = '32';
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'shadowquic_max_datagram_frame_size', _('Max datagram frame size'));
+		so.datatype = 'uinteger';
+		so.placeholder = '1400';
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'shadowquic_recv_window_conn', _('Stream-level receive window size'));
+		so.datatype = 'uinteger';
+		so.placeholder = '0';
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'shadowquic_recv_window', _('Connection-level receive window size'));
+		so.datatype = 'uinteger';
+		so.placeholder = '0';
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'shadowquic_mtu_discovery', _('Path MTU Discovery'));
+		so.default = so.enabled;
+		so.depends('type', 'shadowquic');
 		so.modalonly = true;
 
 		/* TrustTunnel fields */
@@ -830,57 +853,91 @@ return view.extend({
 		so.depends('wireguard_remote_dns_resolve', '1');
 		so.modalonly = true;
 
-		/* Plugin fields */
-		so = ss.taboption('field_general', form.ListValue, 'plugin', _('Plugin'));
-		so.value('', _('none'));
-		so.value('obfs', _('obfs-simple'));
-		//so.value('v2ray-plugin', _('v2ray-plugin'));
-		//so.value('gost-plugin', _('gost-plugin'));
-		so.value('shadow-tls', _('shadow-tls'));
-		so.value('restls', _('restls'));
-		//so.value('kcptun', _('kcptun'));
-		so.depends('type', 'ss');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.ListValue, 'plugin_opts_obfsmode', _('Plugin: ') + _('Obfs Mode'));
-		so.value('http', _('HTTP'));
-		so.value('tls', _('TLS'));
-		so.depends('plugin', 'obfs');
-		so.depends('type', 'snell');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'plugin_opts_host', _('Plugin: ') + _('Host that supports TLS 1.3'));
-		so.datatype = 'hostname';
-		so.placeholder = 'cloud.tencent.com';
-		so.rmempty = false;
-		so.depends({plugin: /^(obfs|v2ray-plugin|shadow-tls|restls)$/});
-		so.depends('type', 'snell');
-		so.modalonly = true;
-
-		so = ss.taboption('field_general', form.Value, 'plugin_opts_thetlspassword', _('Plugin: ') + _('Password'));
+		/* Masque fields */
+		so = ss.taboption('field_general', form.Value, 'masque_private_key', _('Private key'),
+			_('Base64 encoded ECDSA private key on the NIST P-256 curve.'));
 		so.password = true;
+		so.validate = L.bind(hm.validateBase64Key, so, 164);
 		so.rmempty = false;
-		so.depends({plugin: /^(shadow-tls|restls)$/});
+		so.depends('type', 'masque');
 		so.modalonly = true;
 
-		so = ss.taboption('field_general', form.ListValue, 'plugin_opts_shadowtls_version', _('Plugin: ') + _('Version'));
-		so.value('1', _('v1'));
-		so.value('2', _('v2'));
-		so.value('3', _('v3'));
-		so.default = '2';
-		so.depends({plugin: 'shadow-tls'});
+		so = ss.taboption('field_general', form.Value, 'masque_endpoint_public_key', _('Endpoint pubkic key'),
+			_('Base64 encoded ECDSA public key on the NIST P-256 curve.'));
+		so.validate = L.bind(hm.validateBase64Key, so, 124);
+		so.rmempty = false;
+		so.depends('type', 'masque');
 		so.modalonly = true;
 
-		so = ss.taboption('field_general', form.Value, 'plugin_opts_restls_versionhint', _('Plugin: ') + _('Version hint'));
-		so.default = 'tls13';
+		so = ss.taboption('field_general', form.Value, 'masque_ip', _('Local address'),
+			_('The %s address used by local machine in the Cloudflare WARP network.').format('IPv4'));
+		so.datatype = 'ip4addr(1)';
+		so.placeholder = '172.16.0.2';
 		so.rmempty = false;
-		so.depends({plugin: 'restls'});
+		so.depends({type: 'masque', masque_network: /^(|h2)$/});
 		so.modalonly = true;
 
-		so = ss.taboption('field_general', form.Value, 'plugin_opts_restls_script', _('Plugin: ') + _('Restls script'));
-		so.default = '300?100<1,400~100,350~100,600~100,300~200,300~100';
-		so.rmempty = false;
-		so.depends({plugin: 'restls'});
+		so = ss.taboption('field_general', form.Value, 'masque_ipv6', _('Local IPv6 address'),
+			_('The %s address used by local machine in the Cloudflare WARP network.').format('IPv6'));
+		so.datatype = 'ip6addr(1)';
+		so.depends({type: 'masque', masque_network: /^(|h2)$/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'masque_mtu', _('MTU'));
+		so.datatype = 'range(0,9000)';
+		so.placeholder = '1280';
+		so.depends({type: 'masque', masque_network: /^(|h2)$/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.ListValue, 'masque_network', _('Network'));
+		so.default = '';
+		so.value('', _('h3'));
+		so.value('h3-l4proxy', _('h3-l4proxy'));
+		so.value('h2', _('h2'));
+		so.validate = function(section_id, value) {
+			const udp = this.section.getUIElement(section_id, 'udp').node.querySelector('input');
+
+			// Force disabled
+			if (value === 'h3-l4proxy') {
+				udp.checked = false;
+				udp.disabled = true;
+			} else
+				udp.removeAttribute('disabled');
+
+			return true;
+		}
+		so.depends('type', 'masque');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Flag, 'masque_remote_dns_resolve', _('Remote DNS resolve'),
+			_('Force DNS remote resolution.'));
+		so.default = so.disabled;
+		so.depends('type', 'masque');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.DynamicList, 'masque_dns', _('DNS server'));
+		so.datatype = 'or(host, hostport)';
+		so.depends('masque_remote_dns_resolve', '1');
+		so.modalonly = true;
+
+		/* SSH fields */
+		so = ss.taboption('field_general', form.TextValue, 'ssh_priv_key', _('Priv-key'));
+		so.depends('type', 'ssh');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'ssh_priv_key_passphrase', _('Priv-key passphrase'));
+		so.password = true;
+		so.depends({type: 'ssh', ssh_priv_key: /.+/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.DynamicList, 'ssh_host_key_algorithms', _('Host-key algorithms'));
+		so.placeholder = 'rsa';
+		so.depends('type', 'ssh');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.DynamicList, 'ssh_host_key', _('Host-key'));
+		so.placeholder = 'ssh-rsa AAAAB3NzaC1yc2EAA...';
+		so.depends({type: 'ssh', ssh_host_key_algorithms: /.+/});
 		so.modalonly = true;
 
 		/* Extra fields */
@@ -889,7 +946,8 @@ return view.extend({
 		hm.congestion_controller.forEach((res) => {
 			so.value.apply(so, res);
 		})
-		so.depends({type: /^(tuic|masque|trusttunnel)$/});
+		so.depends({type: /^(tuic|shadowquic|trusttunnel)$/});
+		so.depends({type: 'masque', masque_network: /^(|h3-l4proxy)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.ListValue, 'bbr_profile', _('BBR profile'));
@@ -897,13 +955,27 @@ return view.extend({
 		hm.bbr_profiles.forEach((res) => {
 			so.value.apply(so, res);
 		})
-		so.depends({congestion_controller: 'bbr'});
-		so.depends({type: 'hysteria2'});
+		so.depends('congestion_controller', 'bbr');
+		so.depends('type', 'hysteria2');
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'max_open_streams', _('Max open streams'));
+		so.datatype = 'uinteger';
+		so.placeholder = '1024';
+		so.depends({type: /^(tuic|shadowquic)$/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_general', form.Value, 'handshake_timeout', _('Handshake timeout'),
+			_('In seconds. After configuration, the handshake is not affected by the outer connection timeout.') + '</br>' +
+			_('The default value is <code>%s</code>, indicating that only the outer connection timeout is used.').format('0'));
+		so.datatype = 'uinteger';
+		so.placeholder = '30';
+		so.depends({type: /^(hysteria2|openvpn|masque)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_general', form.Flag, 'udp', _('UDP'));
 		so.default = so.disabled;
-		so.depends({type: /^(direct|socks5|ss|mieru|vmess|vless|trojan|anytls|trusttunnel|masque|wireguard)$/});
+		so.depends({type: /^(rematch|direct|socks5|ss|mieru|vmess|vless|trojan|anytls|trusttunnel|wireguard|masque)$/});
 		so.depends({type: 'snell', snell_version: /^(3|4|5)$/});
 		so.modalonly = true;
 
@@ -918,6 +990,93 @@ return view.extend({
 		so.value('2', _('v2'));
 		so.default = '2';
 		so.depends('uot', '1');
+		so.modalonly = true;
+
+		/* Plugin fields */
+		so = ss.taboption('field_general', form.Flag, 'plugin', _('Plugin'));
+		so.default = so.disabled;
+		so.depends({type: /^(ss|snell)$/});
+		so.depends({type: /^(vmess|vless|trojan|anytls)$/});
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.ListValue, 'plugin_type', _('Plugin type'));
+		so.value('obfs', _('obfs-simple'));
+		//so.value('v2ray-plugin', _('v2ray-plugin'));
+		//so.value('gost-plugin', _('gost-plugin'));
+		so.value('shadow-tls', _('ShadowTLS'));
+		so.value('restls', _('Restls'));
+		so.value('jls', _('JLS'));
+		//so.value('kcptun', _('kcptun'));
+		so.validate = function(section_id, value) {
+			const type = this.section.getOption('type').formvalue(section_id);
+
+			if (value) {
+				if (type === 'snell' && !['obfs', 'shadow-tls', 'restls', 'jls'].includes(value)) {
+					return _('Expecting: Only support %s.').format(_('obfs-simple') +
+						' / ' + _('ShadowTLS') +
+						' / ' + _('Restls') +
+						' / ' + _('JLS'));
+				}
+				if (['vmess', 'vless', 'trojan', 'anytls'].includes(type) && !['shadow-tls', 'restls', 'jls'].includes(value)) {
+					return _('Expecting: Only support %s.').format(_('ShadowTLS') +
+						' / ' + _('Restls') +
+						' / ' + _('JLS'));
+				}
+			}
+
+			return true;
+		}
+		so.depends('plugin', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.ListValue, 'plugin_opts_obfsmode', _('Obfs Mode'));
+		so.value('http', _('HTTP'));
+		so.value('tls', _('TLS'));
+		so.depends('plugin_type', 'obfs');
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.Value, 'plugin_opts_host', _('Host that supports TLS 1.3'));
+		so.datatype = 'hostname';
+		so.placeholder = 'cloud.tencent.com';
+		so.rmempty = false;
+		so.depends({plugin_type: /^(obfs|v2ray-plugin|shadow-tls|restls|jls)$/});
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.Value, 'plugin_opts_thetlsusername', _('Username'));
+		so.validate = hm.validateAuthUsername;
+		so.rmempty = false;
+		so.depends({plugin_type: 'jls'});
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.Value, 'plugin_opts_thetlspassword', _('Password'));
+		so.password = true;
+		so.rmempty = false;
+		so.depends({plugin_type: /^(shadow-tls|restls|jls)$/});
+		so.depends('type', 'shadowquic');
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.ListValue, 'plugin_opts_shadowtls_version', _('Version'));
+		so.value('1', _('v1'));
+		so.value('2', _('v2'));
+		so.value('3', _('v3'));
+		so.default = '2';
+		so.depends({plugin_type: 'shadow-tls'});
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.Value, 'plugin_opts_restls_versionhint', _('Version hint'));
+		so.default = 'tls13';
+		so.value('tls12', _('tls12'));
+		so.value('tls13', _('tls13'));
+		so.rmempty = false;
+		so.depends({plugin_type: 'restls'});
+		so.modalonly = true;
+
+		so = ss.taboption('field_plugin', form.Value, 'plugin_opts_restls_script', _('Restls script'));
+		so.default = '300?100<1,400~100,350~100,600~100,300~200,300~100';
+		so.rmempty = false;
+		so.depends({plugin_type: 'restls'});
 		so.modalonly = true;
 
 		/* Vless Encryption fields */
@@ -1019,7 +1178,7 @@ return view.extend({
 		so.depends('hysteria2_realm', '1');
 		so.modalonly = true;
 
-		// @ 下面支持填写针对server-url的TLS配置(sni, skip-cert-verify, fingerprint, certificate, private-key, alpn)
+		// @ 下面支持填写针对server-url的TLS配置(sni, skip-cert-verify, name-cert-verify, fingerprint, certificate, private-key, alpn)
 
 		/* TLS fields */
 		so = ss.taboption('field_general', form.Flag, 'tls', _('TLS'));
@@ -1029,7 +1188,7 @@ return view.extend({
 			let tls = this.section.getUIElement(section_id, 'tls').node.querySelector('input');
 
 			// Force enabled
-			if (['trojan', 'anytls', 'hysteria', 'hysteria2', 'tuic', 'trusttunnel'].includes(type)) {
+			if (['trojan', 'anytls', 'tuic', 'hysteria', 'hysteria2', 'shadowquic', 'trusttunnel', 'masque'].includes(type)) {
 				tls.checked = true;
 				tls.disabled = true;
 			} else {
@@ -1038,7 +1197,7 @@ return view.extend({
 
 			return true;
 		}
-		so.depends({type: /^(http|socks5|vmess|vless|trojan|anytls|hysteria|hysteria2|tuic|masque|trusttunnel)$/});
+		so.depends({type: /^(http|socks5|vmess|vless|trojan|anytls|tuic|hysteria|hysteria2|shadowquic|trusttunnel|masque)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.Flag, 'tls_disable_sni', _('Disable SNI'),
@@ -1048,16 +1207,16 @@ return view.extend({
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.Value, 'tls_sni', _('TLS SNI'),
-			_('Used to verify the hostname on the returned certificates.'));
-		so.depends({tls: '1', type: /^(http|vmess|vless|trojan|anytls|hysteria|hysteria2|trusttunnel)$/});
-		so.depends({tls: '1', tls_disable_sni: '0', type: /^(tuic)$/});
+			_('Hostname that the client attempts to connect to at the start of the TLS handshake process.'));
+		so.depends({tls: '1', type: /^(http|vmess|vless|trojan|anytls|hysteria|hysteria2|trusttunnel|masque)$/});
+		so.depends({tls: '1', type: /^(tuic)$/, tls_disable_sni: '0'});
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.DynamicList, 'tls_alpn', _('TLS ALPN'),
 			_('List of supported application level protocols, in order of preference.'));
 		so.validate = function(section_id, value) {
 			const type = this.section.getOption('type').formvalue(section_id);
-			//const plugin = this.section.getOption('plugin').formvalue(section_id);
+			//const plugin_type = this.section.getOption('plugin_type').formvalue(section_id);
 			let tls_alpn = this.section.getUIElement(section_id, 'tls_alpn');
 
 			// Default alpn
@@ -1066,11 +1225,13 @@ return view.extend({
 
 				switch (type) {
 					case 'ss':
-						def_alpn = ['h2', 'http/1.1']; // when plugin === 'shadow-tls'
+					case 'snell':
+						def_alpn = ['h2', 'http/1.1']; // when plugin_type in ['shadow-tls', 'jls']
 						break;
+					case 'tuic':
 					case 'hysteria':
 					case 'hysteria2':
-					case 'tuic':
+					case 'shadowquic':
 						def_alpn = ['h3'];
 						break;
 					case 'vmess':
@@ -1080,9 +1241,6 @@ return view.extend({
 						break;
 					case 'vless':
 						def_alpn = ['h3', 'h2', 'http/1.1'];
-						break;
-					case 'masque':
-						def_alpn = ['h2'];
 						break;
 					case 'trusttunnel':
 						def_alpn = ['h3', 'h2'];
@@ -1096,8 +1254,9 @@ return view.extend({
 
 			return true;
 		}
-		so.depends({tls: '1', type: /^(vmess|vless|trojan|anytls|hysteria|hysteria2|tuic|masque|trusttunnel)$/});
-		so.depends({type: 'ss', plugin: 'shadow-tls'});
+		so.depends({tls: '1', type: /^(vmess|vless|trojan|anytls|tuic|hysteria|hysteria2|shadowquic|trusttunnel)$/});
+		so.depends({type: 'ss', plugin_type: /^(shadow-tls|jls)$/});
+		so.depends({type: 'snell', plugin_type: 'shadow-tls'});
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.Value, 'tls_fingerprint', _('Cert fingerprint'),
@@ -1113,12 +1272,18 @@ return view.extend({
 		so.depends({tls: '1', type: /^(http|socks5|vmess|vless|trojan|hysteria|hysteria2)$/});
 		so.modalonly = true;
 
+		so = ss.taboption('field_tls', form.Value, 'tls_name_cert_verify', _('Override cert DNSName'),
+			_('Used to verify the hostname on the returned certificates.'));
+		so.datatype = 'hostname';
+		so.depends({tls: '1', type: /^(http|socks5|vmess|vless|trojan|anytls|tuic|hysteria|hysteria2|trusttunnel)$/});
+		so.modalonly = true;
+
 		so = ss.taboption('field_tls', form.Flag, 'tls_skip_cert_verify', _('Skip cert verify'),
 			_('Donot verifying server certificate.') +
 			'<br/>' +
 			_('This is <strong>DANGEROUS</strong>, your traffic is almost like <strong>PLAIN TEXT</strong>! Use at your own risk!'));
 		so.default = so.disabled;
-		so.depends({tls: '1', type: /^(http|socks5|vmess|vless|trojan|anytls|hysteria|hysteria2|tuic|trusttunnel)$/});
+		so.depends({tls: '1', type: /^(http|socks5|vmess|vless|trojan|anytls|tuic|hysteria|hysteria2|trusttunnel)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.Value, 'tls_cert_path', _('Certificate path') + _(' (mTLS)'),
@@ -1151,8 +1316,8 @@ return view.extend({
 
 		so = ss.taboption('field_tls', form.Flag, 'tls_ech', _('Enable ECH'));
 		so.default = so.disabled;
-		so.depends({tls: '1', type: /^(vmess|vless|trojan|anytls|hysteria|hysteria2|tuic)$/});
-		so.depends({type: 'ss', plugin: /^(shadow-tls|restls)$/});
+		so.depends({tls: '1', type: /^(vmess|vless|trojan|anytls|tuic|hysteria|hysteria2)$/});
+		so.depends({type: 'ss', plugin_type: /^(v2ray-plugin|gost-plugin)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.Value, 'tls_ech_config', _('ECH config'),
@@ -1173,11 +1338,22 @@ return view.extend({
 			so.value.apply(so, res);
 		})
 		so.depends({tls: '1', type: /^(vmess|vless|trojan|anytls|trusttunnel)$/});
-		so.depends({type: 'ss', plugin: /^(shadow-tls|restls)$/});
+		so.depends({type: /^(ss|snell)$/, plugin_type: /^(shadow-tls|restls|jls)$/});
 		so.modalonly = true;
 
 		so = ss.taboption('field_tls', form.Flag, 'tls_reality', _('REALITY'));
 		so.default = so.disabled;
+		so.validate = function(section_id, value) {
+			const plugin_type = this.section.getOption('plugin_type').formvalue(section_id);
+			value = this.formvalue(section_id);
+
+			if (value == 1 && ['shadow-tls', 'restls', 'jls'].includes(plugin_type))
+				return _('Expecting: Cannot be enabled when %s is enabled.').format(_('ShadowTLS') +
+					' / ' + _('Restls') +
+					' / ' + _('JLS'));
+
+			return true;
+		}
 		so.depends({tls: '1', type: /^(vmess|vless|trojan)$/});
 		so.modalonly = true;
 
@@ -1197,6 +1373,8 @@ return view.extend({
 		so.depends('tls_reality', '1');
 		so.modalonly = true;
 
+		// @VMess-TLSmirror fields
+
 		/* Transport fields */
 		so = ss.taboption('field_general', form.Flag, 'transport_enabled', _('Transport'));
 		so.default = so.disabled;
@@ -1210,20 +1388,22 @@ return view.extend({
 		so.value('grpc', _('gRPC'));
 		so.value('ws', _('WebSocket'));
 		so.value('xhttp', _('XHTTP'));
+		//so.value('mkcp', _('mKCP')); // VMess only
+		//so.value('mekya', _('Mekya')); // VMess only
 		so.validate = function(section_id, value) {
 			const type = this.section.getOption('type').formvalue(section_id);
 
 			switch (type) {
 				case 'vmess':
 					if (!['http', 'h2', 'grpc', 'ws'].includes(value))
-						return _('Expecting: only support %s.').format(_('HTTP') +
+						return _('Expecting: Only support %s.').format(_('HTTP') +
 							' / ' + _('HTTPUpgrade') +
 							' / ' + _('gRPC') +
 							' / ' + _('WebSocket'));
 					break;
 				case 'vless':
 					if (!['http', 'h2', 'grpc', 'ws', 'xhttp'].includes(value))
-						return _('Expecting: only support %s.').format(_('HTTP') +
+						return _('Expecting: Only support %s.').format(_('HTTP') +
 							' / ' + _('HTTPUpgrade') +
 							' / ' + _('gRPC') +
 							' / ' + _('WebSocket') +
@@ -1231,7 +1411,7 @@ return view.extend({
 					break;
 				case 'trojan':
 					if (!['grpc', 'ws'].includes(value))
-						return _('Expecting: only support %s.').format(_('gRPC') +
+						return _('Expecting: Only support %s.').format(_('gRPC') +
 							' / ' + _('WebSocket'));
 					break;
 				default:
@@ -1470,10 +1650,12 @@ return view.extend({
 		/* Dial fields */
 		so = ss.taboption('field_dial', form.Flag, 'tfo', _('TFO'));
 		so.default = so.disabled;
+		so.depends({type: /^(rematch)$/, '!reverse': true});
 		so.modalonly = true;
 
 		so = ss.taboption('field_dial', form.Flag, 'mptcp', _('mpTCP'));
 		so.default = so.disabled;
+		so.depends({type: /^(rematch)$/, '!reverse': true});
 		so.modalonly = true;
 
 		/* Features are implemented in proxy chain
@@ -1487,11 +1669,13 @@ return view.extend({
 			_('Priority: Proxy Node > Global.'));
 		so.multiple = false;
 		so.noaliases = true;
+		so.depends({type: /^(rematch)$/, '!reverse': true});
 		so.modalonly = true;
 
-		so = ss.taboption('field_dial', form.Value, 'routing_mark', _('Routing mark'),
+		so = ss.taboption('field_dial', form.Value, 'routing_mark', _('Routing mark (Fwmark)'),
 			_('Priority: Proxy Node > Global.'));
 		so.datatype = 'uinteger';
+		so.depends({type: /^(rematch)$/, '!reverse': true});
 		so.modalonly = true;
 
 		so = ss.taboption('field_dial', form.ListValue, 'ip_version', _('IP version'));
@@ -1499,6 +1683,7 @@ return view.extend({
 		hm.ip_version.forEach((res) => {
 			so.value.apply(so, res);
 		})
+		so.depends({type: /^(rematch)$/, '!reverse': true});
 		so.modalonly = true;
 		/* Proxy Node END */
 
@@ -1554,6 +1739,7 @@ return view.extend({
 							'      udp-over-tcp: false\n' +
 							'      down: "50 Mbps"\n' +
 							'      up: "10 Mbps"\n' +
+							'      name-cert-verify: example.com\n' +
 							'      skip-cert-verify: true\n' +
 							'      dialer-proxy: proxy\n' +
 							'      interface-name: tailscale0\n' +
@@ -1566,6 +1752,19 @@ return view.extend({
 							'          target: "TEST"\n' +
 							'        - pattern: "IPLC-(.*?)倍"\n' +
 							'          target: "iplc x $1"\n' +
+							'      override-expr:\n' +
+							"        - '.name = \"[provider1] \" + .name'                   # 普通赋值\n" +
+							"        - '.plugin-opts.mode = \"tls\"'                        # 自动创建缺失的 mapping\n" +
+							"        - '.alpn[] |= upcase'                                # 更新数组中的每一项\n" +
+							"        - 'del(.skip-cert-verify)'                           # 删除字段\n" +
+							"        - '.name = (.name | trim | upcase)'                  # 赋值右侧的管道需加括号\n" +
+							"        - '.name = \"[\\(.type)] \\(.name):\\(.port)\"'           # 字符串插值\n" +
+							"        - '(select(.port == 443) | .tls) = true'             # 条件不匹配时不修改\n" +
+							"        - '.tags |= (unique | sort)'                         # 去重后排序\n" +
+							"        - '.names = [.servers[] | select(.enabled) | .name]' # 收集多个结果\n" +
+							"        - '.servers |= map(select(.enabled))'                # 筛选数组\n" +
+							"        - '.options |= with_entries(.key |= upcase)'         # 转换 mapping\n" +
+							"        - '. | with_entries(.key |= upcase)'                 # 整体过滤结果仍须为 mapping\n" +
 							'    filter: "(?i)港|hk|hongkong|hong kong"\n' +
 							'    exclude-filter: "xxx"\n' +
 							'    exclude-type: "ss|http"\n' +
@@ -1710,7 +1909,12 @@ return view.extend({
 		hm.preset_outbound.direct.forEach((res) => {
 			so.value.apply(so, res);
 		})
-		so.load = L.bind(hm.loadProxyGroupLabel, so, hm.preset_outbound.direct);
+		so.load = function(section_id) {
+			return hm.loadLabel.call(this, [
+				...hm.preset_outbound.direct,
+				...hm.loadLabelValues(this.config, 'proxy_group')
+			], section_id);
+		}
 		so.textvalue = hm.textvalue2Value;
 		//so.editable = true;
 		so.depends('type', 'http');
@@ -1807,10 +2011,17 @@ return view.extend({
 		so.depends({type: 'inline', '!reverse': true});
 		so.modalonly = true;
 
+		so = ss.taboption('field_override', form.DynamicList, 'override_expr', _('Programmable replacement'),
+			_('For format see <a target="_blank" href="%s" rel="noreferrer noopener">%s</a>.')
+				.format('https://wiki.metacubex.one/config/proxy-providers/#overrideoverride-expr', _('override.override-expr')));
+		so.placeholder = '.name = "[provider1] " + .name';
+		so.depends({type: 'inline', '!reverse': true});
+		so.modalonly = true;
+
 		so = ss.taboption('field_override', form.DummyValue, '_config_items', null);
 		so.load = function() {
 			return '<a target="_blank" href="%s" rel="noreferrer noopener">%s</a>'
-				.format('https://wiki.metacubex.one/config/proxy-providers/#_2', _('Configuration Items'));
+				.format('https://wiki.metacubex.one/config/proxy-providers/#override_1', _('Other configuration items'));
 		}
 		so.rawhtml = true;
 		so.depends({type: 'inline', '!reverse': true});
@@ -1849,6 +2060,12 @@ return view.extend({
 		so.depends({type: 'inline', '!reverse': true});
 		so.modalonly = true;
 
+		so = ss.taboption('field_override', form.Value, 'override_name_cert_verify', _('Override cert DNSName'),
+			_('Used to verify the hostname on the returned certificates.'));
+		so.datatype = 'hostname';
+		so.depends({type: 'inline', '!reverse': true});
+		so.modalonly = true;
+
 		so = ss.taboption('field_override', form.ListValue, 'override_skip_cert_verify', _('Skip cert verify'),
 			_('Donot verifying server certificate.') +
 			'<br/>' +
@@ -1874,7 +2091,7 @@ return view.extend({
 		so.depends({type: 'inline', '!reverse': true});
 		so.modalonly = true;
 
-		so = ss.taboption('field_override', form.Value, 'override_routing_mark', _('Routing mark'),
+		so = ss.taboption('field_override', form.Value, 'override_routing_mark', _('Routing mark (Fwmark)'),
 			_('Priority: Proxy Node > Global.'));
 		so.datatype = 'uinteger';
 		so.depends({type: 'inline', '!reverse': true});
@@ -1992,13 +2209,23 @@ return view.extend({
 		so.modalonly = false;
 
 		so = ss.option(form.ListValue, 'chain_head_sub', _('Destination provider'));
-		so.load = L.bind(hm.loadProviderLabel, so, [['', _('-- Please choose --')]]);
+		so.load = function(section_id) {
+			return hm.loadLabel.call(this, [
+				['', _('-- Please choose --')],
+				...hm.loadLabelValues(this.config, 'provider')
+			], section_id);
+		}
 		so.rmempty = false;
 		so.depends('type', 'provider');
 		so.modalonly = true;
 
 		so = ss.option(form.ListValue, 'chain_head', _('Destination proxy node'));
-		so.load = L.bind(hm.loadNodeLabel, so, [['', _('-- Please choose --')]]);
+		so.load = function(section_id) {
+			return hm.loadLabel.call(this, [
+				['', _('-- Please choose --')],
+				...hm.loadLabelValues(this.config, 'node')
+			], section_id);
+		}
 		so.rmempty = false;
 		so.validate = function(section_id, value) {
 			const chain_tail = this.section.getUIElement(section_id, 'chain_tail').getValue();
@@ -2012,13 +2239,23 @@ return view.extend({
 		so.modalonly = true;
 
 		so = ss.option(form.ListValue, 'chain_tail_group', _('Transit proxy group'));
-		so.load = L.bind(hm.loadProxyGroupLabel, so, [['', _('-- Please choose --')]]);
+		so.load = function(section_id) {
+			return hm.loadLabel.call(this, [
+				['', _('-- Please choose --')],
+				...hm.loadLabelValues(this.config, 'proxy_group')
+			], section_id);
+		}
 		so.rmempty = false;
 		so.depends({chain_tail: /.+/, '!reverse': true});
 		so.modalonly = true;
 
 		so = ss.option(form.ListValue, 'chain_tail', _('Transit proxy node'));
-		so.load = L.bind(hm.loadNodeLabel, so, [['', _('-- Please choose --')]]);
+		so.load = function(section_id) {
+			return hm.loadLabel.call(this, [
+				['', _('-- Please choose --')],
+				...hm.loadLabelValues(this.config, 'node')
+			], section_id);
+		}
 		so.rmempty = false;
 		so.validate = function(section_id, value) {
 			const chain_head = this.section.getUIElement(section_id, 'chain_head').getValue();

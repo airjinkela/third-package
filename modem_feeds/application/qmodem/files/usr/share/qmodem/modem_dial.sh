@@ -391,7 +391,7 @@ update_config()
     config_get pdp_index $modem_config pdp_index
     [ -n "$pdp_index" ] && userset_pdp_index="1" || userset_pdp_index="0"
     config_get suggest_pdp_index $modem_config suggest_pdp_index
-    [ -z "$suggest_pdp_index"] && suggest_pdp_index=$(get_platform_suggest_pdp_index)
+    [ -z "$suggest_pdp_index" ] && suggest_pdp_index=$(get_platform_suggest_pdp_index)
     [ -z "$pdp_index" ] && pdp_index=$suggest_pdp_index
     config_get ra_master $modem_config ra_master
     config_get extend_prefix $modem_config extend_prefix
@@ -1077,6 +1077,25 @@ at_dial()
             ;;
         "fibocom")
             case $platform in
+                "qualcomm")
+                    at_command="AT+GTRNDIS=1,$pdp_index"
+                    cgdcont_command="AT+CGDCONT=$pdp_index,\"$pdp_type\""$apn_append
+                    if [ -n "$auth" ]; then
+                        case $auth in
+                            "pap")
+                                auth_num=1 ;;
+                            "chap")
+                                auth_num=2 ;;
+                            "auto"|"both"|"MsChapV2")
+                                auth_num=3 ;;
+                            *)
+                                auth_num=0 ;;
+                        esac
+                        if [ -n "$username" ] || [ -n "$password" ] && [ "$auth_num" != "0" ] ; then
+                            ppp_auth_command="AT+MGAUTH=$pdp_index,$auth_num,\"$username\",\"$password\""
+                        fi
+                    fi
+                    ;;
                 "mediatek")
                     # delay=3
                     # [ "$apn" = "auto" ] || [ -z "$apn" ] && apn="cbnet"

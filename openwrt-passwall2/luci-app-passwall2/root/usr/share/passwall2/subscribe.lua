@@ -481,7 +481,7 @@ local function parseClashNode(node, add_mode, group, sub_cfg)
 	local sub_vmess_type = DEFAULT_VMESS_TYPE
 	local sub_vless_type = DEFAULT_VLESS_TYPE
 	local sub_hysteria2_type = DEFAULT_HYSTERIA2_TYPE
-	local sub_hy_up_mbps, sub_hy_down_mbps = 1000, 1000
+	local sub_hy_up_mbps, sub_hy_down_mbps
 	if sub_cfg then
 		if sub_cfg.allowInsecure and sub_cfg.allowInsecure ~= "1" then
 			sub_allowinsecure = nil
@@ -759,6 +759,15 @@ local function parseClashNode(node, add_mode, group, sub_cfg)
 		if sub_allowinsecure then
 			result.tls_allowInsecure = "1"
 		end
+		if node["client-fingerprint"] then
+			result.utls = "1"
+			result.fingerprint = node["client-fingerprint"]
+		end
+		if node.tls and node["reality-opts"] and node["reality-opts"]["public-key"] then
+			result.reality = "1"
+			result.reality_publicKey = node["reality-opts"]["public-key"]
+			result.reality_shortId = node["reality-opts"]["short-id"]
+		end
 	end
 	if not result.remarks or result.remarks == "" then
 		if result.address and result.port then
@@ -791,7 +800,7 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 	local sub_vmess_type = DEFAULT_VMESS_TYPE
 	local sub_vless_type = DEFAULT_VLESS_TYPE
 	local sub_hysteria2_type = DEFAULT_HYSTERIA2_TYPE
-	local sub_hy_up_mbps, sub_hy_down_mbps = 1000, 1000
+	local sub_hy_up_mbps, sub_hy_down_mbps
 	if sub_cfg then
 		if sub_cfg.allowInsecure and sub_cfg.allowInsecure ~= "1" then
 			sub_allowinsecure = nil
@@ -1345,12 +1354,29 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 
 			result.port = port
 
-			result.tls = '1'
-			result.tls_serverName = params.peer or params.sni or ""
-			result.tls_pinSHA256 = params.pcs
-			result.tls_CertByName = params.vcn
-			local insecure = params.allowinsecure or params.allowInsecure or params.insecure
-			result.tls_allowInsecure = (insecure == "1" or insecure == "0") and insecure or (sub_allowinsecure and "1" or "0")
+			params.security = params.security or "tls"
+			if params.security == "tls" or params.security == "reality" then
+				result.tls = '1'
+				result.tls_serverName = params.peer or params.sni or ""
+				result.alpn = params.alpn
+				if params.fp and params.fp ~= "" then
+					result.utls = "1"
+					result.fingerprint = params.fp
+				end
+				if params.security == "reality" then
+					result.reality = "1"
+					result.reality_publicKey = params.pbk or nil
+					result.reality_shortId = params.sid or nil
+				end
+				if params.ech and params.ech ~= "" then
+					result.ech = "1"
+					result.ech_config = params.ech
+				end
+				result.tls_pinSHA256 = params.pcs
+				result.tls_CertByName = params.vcn
+				local insecure = params.allowinsecure or params.allowInsecure or params.insecure
+				result.tls_allowInsecure = (insecure == "1" or insecure == "0") and insecure or (sub_allowinsecure and "1" or "0")
+			end
 
 			if not params.type then params.type = "tcp" end
 			params.type = string.lower(params.type)
@@ -1424,7 +1450,6 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 				result.httpupgrade_path = params.path
 			end
 
-			result.alpn = params.alpn
 			result.tcp_fast_open = params.tfo
 			result.use_finalmask = (params.fm and params.fm ~= "") and "1" or nil
 			result.finalmask = (params.fm and params.fm ~= "") and api.base64Encode(params.fm) or nil
@@ -1577,6 +1602,10 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 			result.encryption = params.encryption or "none"
 			result.flow = params.flow
 
+			if (not params.security or params.security == "") and params.flow then
+				params.security = "tls"
+			end
+
 			result.tls = "0"
 			if params.security == "tls" or params.security == "reality" then
 				result.tls = "1"
@@ -1711,6 +1740,10 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 		if params["obfs-password"] or params["obfs_password"] then
 			result.hysteria2_obfs_type = params.obfs or "salamander"
 			result.hysteria2_obfs_password = params["obfs-password"] or params["obfs_password"]
+		end
+		if params.obfs == "gecko" then
+			result.hysteria2_obfs_MinPacketSize = params.minpacketsize or "512"
+			result.hysteria2_obfs_MaxPacketSize = params.maxpacketsize or "1200"
 		end
 
 		if (sub_hysteria2_type == "sing-box" and has_singbox) or (sub_hysteria2_type == "xray" and has_xray) then
@@ -1928,7 +1961,7 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 	return result
 end
 
-local function curl(url, file, ua, mode)
+local function curl(url, file, ua, mode, hwid)
 	if not url or url == "" then return 22, 404 end
 	local curl_args = {
 		"-fskL", "-w %{http_code}", "--retry 3", "--connect-timeout 3", "-H 'Accept-Encoding: identity'"
@@ -1937,7 +1970,9 @@ local function curl(url, file, ua, mode)
 		ua = (ua == "passwall2") and ("passwall2/" .. api.get_version()) or ua
 		curl_args[#curl_args + 1] = '--user-agent "' .. ua .. '"'
 	end
-	curl_args[#curl_args + 1] = get_headers()
+	if hwid == "1" then
+		curl_args[#curl_args + 1] = get_headers()
+	end
 	local return_code, result
 	if mode == "direct" then
 		return_code, result = api.curl_direct(url, file, curl_args)
@@ -2461,7 +2496,7 @@ local execute = function()
 				log(1, i18n.translatef("Start subscribing: %s", '【' .. remark .. '】' .. url .. ' [' .. result .. ']'))
 				tmp_file = "/tmp/" .. cfgid
 				local return_code
-				return_code, value.http_code = curl(url, tmp_file, ua, access_mode)
+				return_code, value.http_code = curl(url, tmp_file, ua, access_mode, value.hwid)
 				if return_code ~= 0 then
 					fail_list[#fail_list + 1] = value
 					luci.sys.call("rm -f " .. tmp_file)

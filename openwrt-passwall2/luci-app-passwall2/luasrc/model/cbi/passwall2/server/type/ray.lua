@@ -24,7 +24,7 @@ local function _n(name)
 end
 
 local x_ss_method_list = {
-	"none", "plain", "aes-128-gcm", "aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"
+	"aes-128-gcm", "aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"
 }
 
 local header_type_list = {
@@ -97,9 +97,6 @@ o.rewrite_option = "method"
 for a, t in ipairs(x_ss_method_list) do o:value(t) end
 o:depends({ [_n("protocol")] = "shadowsocks" })
 
-o = s:option(Flag, _n("iv_check"), translate("IV Check"))
-o:depends({ [_n("protocol")] = "shadowsocks" })
-
 o = s:option(ListValue, _n("ss_network"), translate("Transport"))
 o.default = "tcp,udp"
 o:value("tcp", "TCP")
@@ -133,6 +130,12 @@ o:depends({ [_n("protocol")] = "hysteria2"})
 
 o = s:option(Value, _n("hysteria2_realm_url"), translate("Realm URL"), translate("Example:") .. "realm://public@realm.hy2.io/your-realm-name")
 o:depends({ [_n("hysteria2_realms")] = "1" })
+o.validate = function(self, value)
+	value = api.trim(value)
+	local realm = api.parse_realm_uri(value)
+	if realm then return value end
+	return nil, translate("Invalid Realm URL.")
+end
 
 o = s:option(DynamicList, _n("hysteria2_realm_stun"), translate("Realm STUN"))
 o.default = { "stun.sip.us:3478", "stun.nextcloud.com:3478", "global.stun.twilio.com:3478" }
@@ -150,6 +153,18 @@ o:depends({ [_n("protocol")] = "hysteria2" })
 
 o = s:option(Value, _n("hysteria2_obfs_password"), translate("Obfs Password"))
 o:depends({ [_n("hysteria2_obfs_type")] = "salamander" })
+o:depends({ [_n("hysteria2_obfs_type")] = "gecko" })
+
+o = s:option(Value, _n("hysteria2_obfs_MinPacketSize"), translate("Gecko Packet Size (min)"))
+o.datatype = "uinteger"
+o.placeholder = "512"
+o.default = "512"
+o:depends({ [_n("hysteria2_obfs_type")] = "gecko" })
+
+o = s:option(Value, _n("hysteria2_obfs_MaxPacketSize"), translate("Gecko Packet Size (max)"))
+o.datatype = "uinteger"
+o.placeholder = "1200"
+o.default = "1200"
 o:depends({ [_n("hysteria2_obfs_type")] = "gecko" })
 
 o = s:option(Flag, _n("hysteria2_ignore_client_bandwidth"), translate("Client BBR Flow Control"))
@@ -232,7 +247,6 @@ o:value("http/1.1")
 o:value("h2,http/1.1")
 o:value("h3,h2,http/1.1")
 o:depends({ [_n("tls")] = true, [_n("reality")] = false })
-o:depends({ [_n("protocol")] = "hysteria2"})
 
 o = s:option(Flag, _n("use_mldsa65Seed"), translate("ML-DSA-65"))
 o.default = "0"
@@ -398,6 +412,7 @@ o = s:option(TextValue, _n("finalmask"), "FinalMask JSON")
 o:depends({ [_n("use_finalmask")] = true })
 o.rows = 10
 o.wrap = "off"
+o.datatype = "json"
 o.custom_cfgvalue = function(self, section, value)
 	local raw = m:get(section, "finalmask")
 	if raw then
@@ -406,14 +421,6 @@ o.custom_cfgvalue = function(self, section, value)
 end
 o.custom_write = function(self, section, value)
 	m:set(section, "finalmask", api.base64Encode(value) or "")
-end
-o.validate = function(self, value)
-	value = api.trim(value):gsub("\r\n", "\n"):gsub("^[ \t]*\n", ""):gsub("\n[ \t]*$", ""):gsub("\n[ \t]*\n", "\n")
-	if api.jsonc.parse(value) then
-		return value
-	else
-		return nil, "FinalMask " .. translate("Must be JSON text!")
-	end
 end
 
 --[[acceptProxyProtocol]]
@@ -509,16 +516,16 @@ for _, d in ipairs(netdev_list) do
 	o:value(d.name, d.label)
 end
 
-o = s:option(TextValue, _n("custom_config"), translate("Custom Config"))
+o = s:option(TextValue, _n("custom_config"), translate("Custom Config") .. " (JSON)")
 o.rows = 10
 o.wrap = "off"
 o:depends({ [_n("custom")] = true })
-o.validate = function(self, value, t)
-	if value and api.jsonc.parse(value) then
-		return value
-	else
-		return nil, translate("Custom Config") .. " " .. translate("Must be JSON text!")
-	end
+o.datatype = "json"
+local o_validate = o.validate
+o.validate = function(self, value)
+	local v = o_validate(self, value)
+	if v then return v end
+	return nil, translate("Custom Config") .. " " .. translate("Must be JSON text!")
 end
 o.custom_cfgvalue = function(self, section, value)
 	local config_str = m:get(section, "config_str")

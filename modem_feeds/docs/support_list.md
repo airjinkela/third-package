@@ -17,6 +17,7 @@ ep06 | lte |✔ usb(qmi,ecm,mbim,rndis) | ✘
 em12 | lte |✔ usb(qmi,ecm,mbim,rndis) | ✘
 em120k | lte12 |✔ usb(qmi,ecm,mbim,rndis) | ✘
 em160r-gl | lte12 |✔ usb(qmi,ecm,mbim,rndis) | ✘
+ag598eeu | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
 rg200u-cn | unisoc |✔ usb(ecm,mbim,rndis,ncm) | ✘
 rg801 | hisilicon |✔ usb(ecm,rndis,ncm) | ✘
 rm500u-cn | unisoc |✔ usb(ecm,mbim,rndis,ncm) | ✘
@@ -64,9 +65,9 @@ fm350-gl-00 | mediatek |✔ usb(rndis) | ✘
 fm350r-gl | mediatek |✔ usb(rndis) | ✔ pcie(mbim)
 rw350r-gl | mediatek |✔ usb(rndis) | ✔ pcie(mbim)
 fm150-ae | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,mbim)
-fm160-cn | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
-fm160-eau | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
-fm160-na | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✘
+fm160-cn | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,mbim)
+fm160-eau | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,mbim)
+fm160-na | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi,mbim)
 fm170-eau | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis) | ✔ pcie(qmi,mbim)
 fm190w-gl | qualcomm |✔ usb(qmi,gobinet,ecm,mbim,rndis,ncm) | ✔ pcie(qmi)
 l610-eu | unisoc |✔ usb(ecm,rndis,ncm) | ✘

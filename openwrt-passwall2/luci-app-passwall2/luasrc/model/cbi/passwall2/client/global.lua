@@ -4,6 +4,8 @@ datatypes = api.datatypes
 has_singbox = api.finded_com("sing-box")
 has_xray = api.finded_com("xray")
 
+api.set_default_cbi()
+
 m = Map(appname)
 api.set_apply_on_parse(m)
 
@@ -355,11 +357,13 @@ o.default = n + 1080
 o.datatype = "port"
 o.rmempty = false
 
+--[[
 if has_singbox or has_xray then
 	o = s2:option(Value, "http_port", "HTTP " .. translate("Listen Port") .. " " .. translate("0 is not use"))
 	o.default = 0
 	o.datatype = "port"
 end
+]]--
 
 local o_node = s.fields["node"]
 local o_socks = s2.fields["node"]
@@ -384,4 +388,4 @@ footer.shunt_list = api.jsonc.stringify(shunt_list)
 
 m:append(footer)
 
-return m
+return api.return_map(m)

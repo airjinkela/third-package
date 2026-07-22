@@ -26,7 +26,7 @@ iStore 的无法弥补的缺陷：
 只支持 x86_64 和 arm64 设备。
 
 ```
-opkg update || exit 1
+apk update || opkg update || exit 1
 cd /tmp
 wget https://github.com/linkease/openwrt-app-actions/raw/main/applications/luci-app-systools/root/usr/share/systools/istore-reinstall.run
 chmod 755 istore-reinstall.run

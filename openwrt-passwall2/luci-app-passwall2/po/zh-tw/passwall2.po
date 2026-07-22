@@ -376,6 +376,9 @@ msgstr "負載均衡"
 msgid "Node Addition Method"
 msgstr "節點新增方式"
 
+msgid "Backup Node Addition Method"
+msgstr "備用節點新增方式"
+
 msgid "Manual"
 msgstr "手動"
 
@@ -391,11 +394,15 @@ msgstr "節點匹配規則"
 msgid ""
 "Example: <code>^A && B && !C && D$</code><br>"
 "This means the node remark must start with A (^), include B, exclude C (!), and end with D ($).<br>"
-"Conditions are joined by <code>&&</code>, and their order does not affect the result."
+"Conditions are joined by <code>&&</code> (AND), and their order does not affect the result.<br>"
+"Multiple groups can be separated by <code>||</code> (OR), matching succeeds if any group matches.<br>"
+"Example: <code>A && B || C && D</code> means (A AND B) OR (C AND D)."
 msgstr ""
 "示例：<code>^A && B && !C && D$</code><br>"
 "表示節點備註需同時滿足：以 A 開頭（^）、包含 B、不包含 C（!）、並以 D 結尾（$）。<br>"
-"多個條件使用 <code>&&</code> 連接，條件順序不影響結果。"
+"多個條件使用 <code>&&</code>（與）連接，條件順序不影響結果。<br>"
+"多組條件之間可使用 <code>||</code>（或）分隔，任意一組匹配即視為成功。<br>"
+"示例：<code>A && B || C && D</code> 表示 (A 且 B) 或 (C 且 D)。"
 
 msgid "Balancing Strategy"
 msgstr "負載均衡策略"
@@ -581,10 +588,10 @@ msgid "Certificate fingerprint"
 msgstr "證書指紋"
 
 msgid "Max upload Mbps"
-msgstr "最大上行(Mbps)"
+msgstr "最大上行（Mbps）"
 
 msgid "Max download Mbps"
-msgstr "最大下行(Mbps)"
+msgstr "最大下行（Mbps）"
 
 msgid "QUIC stream receive window"
 msgstr "QUIC 流接收窗口"
@@ -664,8 +671,8 @@ msgstr "單位：分鐘"
 msgid "stop automatically mode"
 msgstr "定時關閉模式"
 
-msgid "stop Time(Every day)"
-msgstr "關閉時間(每天)"
+msgid "stop Time"
+msgstr "關閉時間"
 
 msgid "stop Interval(Hour)"
 msgstr "關閉間隔(小時)"
@@ -673,8 +680,8 @@ msgstr "關閉間隔(小時)"
 msgid "start automatically mode"
 msgstr "定時開啟模式"
 
-msgid "start Time(Every day)"
-msgstr "開啟時間(每天)"
+msgid "start Time"
+msgstr "開啟時間"
 
 msgid "start Interval(Hour)"
 msgstr "開啟間隔(小時)"
@@ -682,8 +689,8 @@ msgstr "開啟間隔(小時)"
 msgid "restart automatically mode"
 msgstr "定時重啟模式"
 
-msgid "restart Time(Every day)"
-msgstr "重啟時間(每天)"
+msgid "restart Time"
+msgstr "重啟時間"
 
 msgid "restart Interval(Hour)"
 msgstr "重啟間隔(小時)"
@@ -748,11 +755,11 @@ msgstr "劫持ICMP (PING)"
 msgid "Hijacking ICMPv6 (IPv6 PING)"
 msgstr "劫持ICMPv6 (IPv6 PING)"
 
-msgid "Force Proxy LAN IP"
-msgstr "強制代理內網IP段"
+msgid "Direct IP List"
+msgstr "直連 IP 列表"
 
-msgid "By default, commonly used internal network IP ranges will be connect directly (not entering the core). If you want a certain network range to go through a proxy, please add it here."
-msgstr "預設情況下，常用內網IP網段將直連（不進入核心），如果你希望某個網段走代理，請在此新增。"
+msgid "These had been joined ip addresses will connect directly (not entering the core)."
+msgstr "加入的IP段将直接連接（不進入内核）。"
 
 msgid "Sniffing"
 msgstr "流量嗅探"
@@ -889,17 +896,14 @@ msgstr "回滾"
 msgid "Rollbacking..."
 msgstr "回滾中..."
 
-msgid "Enable auto update rules"
-msgstr "開啟自動更新規則"
-
-msgid "Update Time(every day)"
-msgstr "更新時間(每天)"
+msgid "Update Time"
+msgstr "更新時間"
 
 msgid "Update Interval(hour)"
 msgstr "更新間隔(小時)"
 
-msgid "Update Mode"
-msgstr "更新模式"
+msgid "Auto Update Mode"
+msgstr "自動更新模式"
 
 msgid "Loop Mode"
 msgstr "循环"
@@ -996,9 +1000,6 @@ msgstr "移動中"
 
 msgid "App Update"
 msgstr "组件更新"
-
-msgid "Please confirm that your firmware supports FPU."
-msgstr "請確認你的固件支持FPU。"
 
 msgid "if you want to run from memory, change the path, /tmp beginning then save the application and update it manually."
 msgstr "如果你希望从內存中運行，請更改路径，/tmp 開头，然後保存應用後，再手動更新。"
@@ -1243,9 +1244,6 @@ msgstr "清空日誌"
 msgid "Password"
 msgstr "密碼"
 
-msgid "IV Check"
-msgstr "IV 檢查"
-
 msgid "UDP over TCP"
 msgstr "TCP 封装 UDP"
 
@@ -1257,12 +1255,6 @@ msgstr "本地端口"
 
 msgid "Fast Open"
 msgstr "快速打開"
-
-msgid "Pre-connections"
-msgstr "預連接"
-
-msgid "Number of early established connections to reduce latency."
-msgstr "預連接的數量，用於降低延遲。"
 
 msgid "plugin"
 msgstr "插件"
@@ -1654,6 +1646,12 @@ msgstr "TLS 憑證（PEM）"
 msgid "Full certificate (chain), PEM format."
 msgstr "完整憑證（鏈），PEM 格式。"
 
+msgid "Fetch Manually"
+msgstr "手動獲取"
+
+msgid "Fetch Failed"
+msgstr "獲取失敗"
+
 msgid "ECH Config"
 msgstr "ECH 配置"
 
@@ -1758,6 +1756,18 @@ msgstr "落地節點"
 
 msgid "Only support a layer of proxy."
 msgstr "仅支持一層代理。"
+
+msgid "Send HWID"
+msgstr "傳送 HWID"
+
+msgid "Some subscription providers may require a hardware identifier (HWID) for authentication."
+msgstr "部分訂閱服務提供者可能需要硬體識別碼（HWID）進行驗證。"
+
+msgid "Enabling this option will send a hashed HWID when updating subscriptions."
+msgstr "啟用此選項後，更新訂閱時將傳送經過雜湊處理的 HWID。"
+
+msgid "This may reveal limited hardware information. Enable only if you trust your provider."
+msgstr "這可能會洩露有限的硬體資訊。請僅在信任您的服務提供者時啟用。"
 
 msgid ""
 "Chained proxy works only with Xray or Sing-box nodes.<br>"
@@ -2383,3 +2393,15 @@ msgstr "訂閱完毕..."
 
 msgid "Processing, please wait…"
 msgstr "正在處理，請稍候。"
+
+msgid "Invalid Realm URL."
+msgstr "Realm URL 不正確。"
+
+msgid "Gecko Packet Size (min)"
+msgstr "Gecko 包大小（最小）"
+
+msgid "Gecko Packet Size (max)"
+msgstr "Gecko 包大小（最大）"
+
+msgid "valid time (hh:mm)"
+msgstr "有效時間（hh:mm）"

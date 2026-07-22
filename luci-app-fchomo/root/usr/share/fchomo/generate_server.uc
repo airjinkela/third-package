@@ -39,14 +39,29 @@ function parse_users(cfg) {
 /* Main */
 const config = {};
 
+/* Cache START */
+/* Cache settings */
+config.profile = {
+	"store-selected": false,
+	"store-fake-ip": false
+};
+/* Cache END */
+
 /* Inbound START */
 config.listeners = [];
 uci.foreach(uciconf, uciserver, (cfg) => {
 	if (cfg.enabled === '0')
 		return;
 
-	push(config.listeners, parseListener(cfg, false));
+	push(config.listeners, parseListener(cfg));
 });
 /* Inbound END */
+
+/* Routing rules START */
+/* Routing rules */
+config.rules = [
+	"MATCH,DIRECT"
+];
+/* Routing rules END */
 
 printf('%.J\n', removeBlankAttrs(config));

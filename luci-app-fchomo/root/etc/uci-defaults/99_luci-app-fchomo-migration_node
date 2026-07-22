@@ -50,6 +50,38 @@ migrate() {
 		uci_remove "$CONF" "$1" masque_congestion_controller
 		uci_set "$CONF" "$1" congestion_controller "$masque_congestion_controller"
 	fi
+
+	# tuic_max_open_streams -> max_open_streams
+	if isDefined "$1" tuic_max_open_streams; then
+		local tuic_max_open_streams
+		config_get tuic_max_open_streams "$1" tuic_max_open_streams ""
+		uci_remove "$CONF" "$1" tuic_max_open_streams
+		uci_set "$CONF" "$1" max_open_streams "$tuic_max_open_streams"
+	fi
+
+	# hysteria_up_mbps -> brutal_up_mbps
+	if isDefined "$1" hysteria_up_mbps; then
+		local hysteria_up_mbps
+		config_get hysteria_up_mbps "$1" hysteria_up_mbps ""
+		uci_remove "$CONF" "$1" hysteria_up_mbps
+		uci_set "$CONF" "$1" brutal_up_mbps "$hysteria_up_mbps"
+	fi
+
+	# hysteria_down_mbps -> brutal_down_mbps
+	if isDefined "$1" hysteria_down_mbps; then
+		local hysteria_down_mbps
+		config_get hysteria_down_mbps "$1" hysteria_down_mbps ""
+		uci_remove "$CONF" "$1" hysteria_down_mbps
+		uci_set "$CONF" "$1" brutal_down_mbps "$hysteria_down_mbps"
+	fi
+
+	# plugin -> plugin_type
+	if isDefined "$1" plugin && ! isDefined "$1" plugin_type; then
+		local plugin
+		config_get plugin "$1" plugin ""
+		uci_set "$CONF" "$1" plugin "1"
+		uci_set "$CONF" "$1" plugin_type "$plugin"
+	fi
 }
 
 config_foreach migrate node

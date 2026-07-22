@@ -121,7 +121,7 @@ function parse_filter(cfg) {
 		return cfg;
 }
 
-function get_proxy(cfg) {
+function get_proxy(cfg, no_verify) {
 	if (isEmpty(cfg))
 		return null;
 
@@ -129,9 +129,12 @@ function get_proxy(cfg) {
 		return cfg;
 
 	const label = uci.get(uciconf, cfg, 'label');
-	if (isEmpty(label))
-		die(sprintf("%s's label is missing, please check your configuration.", cfg));
-	else
+	if (isEmpty(label)) {
+		if (no_verify)
+			return cfg;
+		else
+			die(sprintf("%s's label is missing, please check your configuration.", cfg));
+	} else
 		return label;
 }
 
@@ -259,11 +262,13 @@ config.tls = {
 /* API START */
 const api_port = uci.get(uciconf, uciapi, 'external_controller_port');
 const api_tls_port = uci.get(uciconf, uciapi, 'external_controller_tls_port');
+const api_routing_mark = uci.get(uciconf, uciapi, 'external_controller_routing_mark');
 /* API settings */
 config["external-controller-cors"] = {
 	"allow-origins": uci.get(uciconf, uciapi, 'external_controller_cors_allow_origins') || ['*'],
 	"allow-private-network" : (uci.get(uciconf, uciapi, 'external_controller_cors_allow_private_network') === '0') ? false : true
 };
+config["external-controller-routing-mark"] = strToInt(api_routing_mark) || null;
 config["external-controller"] = api_port ? '[::]:' + api_port : null;
 config["external-controller-tls"] = api_tls_port ? '[::]:' + api_tls_port : null;
 config["external-doh-server"] = uci.get(uciconf, uciapi, 'external_doh_server');
@@ -338,7 +343,18 @@ uci.foreach(uciconf, uciinbd, (cfg) => {
 	if (cfg.enabled === '0')
 		return;
 
-	push(config.listeners, parseListener(cfg, true, get_proxy(cfg.proxy)));
+	const listener = parseListener(cfg);
+	listener.proxy = get_proxy(listener.proxy);
+	if (listener["shadow-tls"])
+		listener["shadow-tls"].handshake.proxy = get_proxy(listener["shadow-tls"].handshake.proxy);
+	if (listener["res-tls"])
+		listener["res-tls"].proxy = get_proxy(listener["res-tls"].proxy);
+	if (listener["jls-config"])
+		listener["jls-config"].proxy = get_proxy(listener["jls-config"].proxy);
+	if (listener["jls-upstream"])
+		listener["jls-upstream"].proxy = get_proxy(listener["jls-upstream"].proxy);
+
+	push(config.listeners, listener);
 });
 /* Tun settings */
 if (match(proxy_mode, /tun/))
@@ -386,6 +402,7 @@ config.dns = {
 	enable: true,
 	"prefer-h3": false,
 	listen: '[::]:' + (uci.get(uciconf, ucidns, 'dns_port') || '7853'),
+	"listen-routing-mark": strToInt(uci.get(uciconf, ucidns, 'routing_mark')) || null,
 	ipv6: (uci.get(uciconf, ucidns, 'ipv6') === '0') ? false : true,
 	"enhanced-mode": 'redir-host',
 	"use-hosts": true,
@@ -437,6 +454,7 @@ if (!isEmpty(config.dns.fallback))
 		ipcidr: uci.get(uciconf, ucidns, 'fallback_filter_ipcidr') || [],
 		domain: uci.get(uciconf, ucidns, 'fallback_filter_domain') || [],
 	};
+config.dns["fallback-lazy-query"] = strToBool(uci.get(uciconf, ucidns, 'fallback_lazy_query'));
 /* DNS END */
 
 /* Hosts START */
@@ -479,48 +497,21 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"routing-mark": strToInt(cfg.routing_mark) || null,
 		"ip-version": cfg.ip_version,
 
-		/* HTTP / SOCKS / Shadowsocks / VMess / VLESS / Trojan / hysteria2 / TUIC / SSH / WireGuard / Masque */
+		/* Rematch */
+		"target-rematch-name": cfg.target_rematch_name,
+		"target-sub-rule": cfg.target_sub_rule,
+
+		/* HTTP / SOCKS / Shadowsocks / VMess / VLESS / Trojan / TUIC / hysteria2 / WireGuard / Masque */
 		username: cfg.username,
 		uuid: cfg.vmess_uuid || cfg.uuid,
 		cipher: cfg.vmess_chipher || cfg.shadowsocks_chipher,
 		password: cfg.shadowsocks_password || cfg.password,
 		headers: cfg.headers ? json(cfg.headers) : null,
-		"private-key": cfg.masque_private_key || cfg.wireguard_private_key || cfg.ssh_priv_key,
-		"public-key": cfg.masque_endpoint_public_key || cfg.wireguard_peer_public_key,
 		ip: cfg.masque_ip || cfg.wireguard_ip,
 		ipv6: cfg.masque_ipv6 || cfg.wireguard_ipv6,
 		mtu: strToInt(cfg.masque_mtu ?? cfg.wireguard_mtu) || null,
 		"remote-dns-resolve": strToBool(cfg.masque_remote_dns_resolve ?? cfg.wireguard_remote_dns_resolve),
 		dns: cfg.masque_dns || cfg.wireguard_dns,
-
-		/* Hysteria / Hysteria2 */
-		ports: isEmpty(cfg.hysteria_ports) ? null : join(',', cfg.hysteria_ports),
-		"hop-interval": strToInt(cfg.hysteria_hop_interval), // @DEBUG ERROR data type *utils.IntRanges[uint16]
-		up: cfg.hysteria_up_mbps ? cfg.hysteria_up_mbps + ' Mbps' : null,
-		down: cfg.hysteria_down_mbps ? cfg.hysteria_down_mbps + ' Mbps' : null,
-		obfs: cfg.hysteria_obfs_type,
-		"obfs-password": cfg.hysteria_obfs_password,
-		"obfs-min-packet-size": strToInt(cfg.hysteria_obfs_min_packet_size),
-		"obfs-max-packet-size": strToInt(cfg.hysteria_obfs_max_packet_size),
-		"realm-opts": cfg.hysteria2_realm === '1' ? {
-			enable: true,
-			"server-url": cfg.hysteria2_realm_server_url,
-			token: cfg.hysteria2_realm_token,
-			"realm-id": cfg.hysteria2_realm_id,
-			"stun-servers": cfg.hysteria2_realm_stun_servers,
-			// @TLS of server-url
-			//sni,
-			//alpn,
-			//"skip-cert-verify",
-			//fingerprint,
-			//certificate,
-			//"private-key"
-		} : null,
-
-		/* SSH */
-		"private-key-passphrase": cfg.ssh_priv_key_passphrase,
-		"host-key-algorithms": cfg.ssh_host_key_algorithms,
-		"host-key": cfg.ssh_host_key,
 
 		/* Shadowsocks */
 
@@ -552,24 +543,16 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 
 		/* Snell */
 		psk: cfg.snell_psk,
-		version: cfg.snell_version,
+		version: strToInt(cfg.snell_version),
 		reuse: strToBool(cfg.snell_reuse),
-		"obfs-opts": cfg.type === 'snell' ? {
-			mode: cfg.plugin_opts_obfsmode,
-			host: cfg.plugin_opts_host,
-		} : null,
 
-		/* TUIC */
-		ip: cfg.tuic_ip,
-		"udp-relay-mode": cfg.tuic_udp_relay_mode,
-		"udp-over-stream": strToBool(cfg.tuic_udp_over_stream),
-		"udp-over-stream-version": cfg.tuic_udp_over_stream_version,
-		"max-udp-relay-packet-size": strToInt(cfg.tuic_max_udp_relay_packet_size) || null,
-		"reduce-rtt": strToBool(cfg.tuic_reduce_rtt),
-		"heartbeat-interval": strToInt(cfg.tuic_heartbeat) || null,
-		"request-timeout": strToInt(cfg.tuic_request_timeout) || null,
-		// @"fast-open": true,
-		"max-open-streams": strToInt(cfg.tuic_max_open_streams) || null,
+		/* VMess / VLESS */
+		flow: cfg.vless_flow,
+		alterId: strToInt(cfg.vmess_alterid),
+		"global-padding": cfg.type === 'vmess' ? (cfg.vmess_global_padding === '0' ? false : true) : null,
+		"authenticated-length": strToBool(cfg.vmess_authenticated_length),
+		"packet-encoding": cfg.vmess_packet_encoding,
+		encryption: cfg.vless_encryption === '1' ? cfg.vless_encryption_encryption : null,
 
 		/* Trojan */
 		"ss-opts": cfg.trojan_ss_enabled === '1' ? {
@@ -583,16 +566,57 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		"idle-session-timeout": durationToSecond(cfg.anytls_idle_session_timeout),
 		"min-idle-session": strToInt(cfg.anytls_min_idle_session),
 
-		/* VMess / VLESS */
-		flow: cfg.vless_flow,
-		alterId: strToInt(cfg.vmess_alterid),
-		"global-padding": cfg.type === 'vmess' ? (cfg.vmess_global_padding === '0' ? false : true) : null,
-		"authenticated-length": strToBool(cfg.vmess_authenticated_length),
-		"packet-encoding": cfg.vmess_packet_encoding,
-		encryption: cfg.vless_encryption === '1' ? cfg.vless_encryption_encryption : null,
+		/* TUIC */
+		ip: cfg.tuic_ip,
+		"udp-relay-mode": cfg.tuic_udp_relay_mode,
+		"udp-over-stream-version": cfg.tuic_udp_over_stream_version,
+		"max-udp-relay-packet-size": strToInt(cfg.tuic_max_udp_relay_packet_size) || null,
+		"fast-open": strToBool(cfg.tuic_fast_open),
+		"reduce-rtt": strToBool(cfg.tuic_reduce_rtt),
+		"request-timeout": strToInt(cfg.tuic_request_timeout) || null,
+
+		/* Brutal */
+		up: strToInt(cfg.brutal_up_mbps),
+		down: strToInt(cfg.brutal_down_mbps),
+
+		/* Hysteria / Hysteria2 */
+		ports: isEmpty(cfg.hysteria_ports) ? null : join(',', cfg.hysteria_ports),
+		"hop-interval": strToInt(cfg.hysteria_hop_interval), // @DEBUG ERROR data type *utils.IntRanges[uint16]
+		obfs: cfg.hysteria_obfs_type,
+		"obfs-password": cfg.hysteria_obfs_password,
+		"obfs-min-packet-size": strToInt(cfg.hysteria_obfs_min_packet_size),
+		"obfs-max-packet-size": strToInt(cfg.hysteria_obfs_max_packet_size),
+		"realm-opts": cfg.hysteria2_realm === '1' ? {
+			enable: true,
+			"server-url": cfg.hysteria2_realm_server_url,
+			token: cfg.hysteria2_realm_token,
+			"realm-id": cfg.hysteria2_realm_id,
+			"stun-servers": cfg.hysteria2_realm_stun_servers,
+			// @TLS of server-url
+			//sni,
+			//alpn,
+			//"skip-cert-verify",
+			//fingerprint,
+			//certificate,
+			//"private-key"
+		} : null,
+
+		/* ShadowQUIC */
+		...(cfg.type === 'shadowquic' ? {
+			username: cfg.plugin_opts_thetlsusername,
+			password: cfg.plugin_opts_thetlspassword,
+			sni: cfg.plugin_opts_host
+		} : {}),
+		"quic-versions": cfg.shadowquic_quic_versions,
+		"zero-rtt": strToBool(cfg.shadowquic_zero_rtt),
+		cwnd: strToInt(cfg.shadowquic_cwnd),
+		"max-datagram-frame-size": strToInt(cfg.shadowquic_max_datagram_frame_size),
+		"recv-window-conn": strToInt(cfg.shadowquic_recv_window_conn),
+		"recv-window": strToInt(cfg.shadowquic_recv_window),
+		"disable-mtu-discovery": cfg.shadowquic_mtu_discovery === '0' ? true : null,
 
 		/* TrustTunnel */
-		"health-check": cfg.trusttunnel_health_check === '0' ? false : true,
+		"health-check": cfg.type === 'trusttunnel' ? (cfg.trusttunnel_health_check === '0' ? false : true) : null,
 		quic: strToBool(cfg.trusttunnel_quic),
 
 		/* WireGuard */
@@ -601,33 +625,78 @@ uci.foreach(uciconf, ucinode, (cfg) => {
 		reserved: cfg.wireguard_reserved,
 		"persistent-keepalive": strToInt(cfg.wireguard_persistent_keepalive),
 
-		/* Plugin fields */
-		plugin: cfg.plugin,
-		"plugin-opts": cfg.plugin ? {
-			mode: cfg.plugin_opts_obfsmode,
-			host: cfg.plugin_opts_host,
-			password: cfg.plugin_opts_thetlspassword,
-			version: strToInt(cfg.plugin_opts_shadowtls_version),
-			"version-hint": cfg.plugin_opts_restls_versionhint,
-			"restls-script": cfg.plugin_opts_restls_script
-		} : null,
+		/* Masque */
+		network: cfg.masque_network || null,
+
+		/* SSH */
+		"private-key-passphrase": cfg.ssh_priv_key_passphrase,
+		"host-key-algorithms": cfg.ssh_host_key_algorithms,
+		"host-key": cfg.ssh_host_key,
 
 		/* Extra fields */
+		"udp-over-stream": strToBool(cfg.shadowquic_udp_over_stream || cfg.tuic_udp_over_stream),
+		"heartbeat-interval": strToInt(cfg.tuic_heartbeat) || null,
+		"keep-alive-interval": strToInt(cfg.shadowquic_heartbeat) || null,
 		"congestion-controller": cfg.congestion_controller,
 		"bbr-profile": cfg.bbr_profile,
+		"max-open-streams": strToInt(cfg.max_open_streams) || null,
+
+		"handshake-timeout": strToInt(cfg.handshake_timeout),
 		udp: strToBool(cfg.udp),
 		"udp-over-tcp": strToBool(cfg.uot),
 		"udp-over-tcp-version": cfg.uot_version,
 
+		/* Plugin fields */
+		...(cfg.plugin === '1' ? (
+			cfg.type in ['vmess', 'vless', 'trojan', 'anytls'] ? {
+				tls: true,
+				...arrToObj([[cfg.type in ['vmess', 'vless'] ? 'servername' : 'sni', cfg.plugin_opts_host]]),
+				// shadow-tls
+				"shadow-tls-opts": cfg.plugin_type === 'shadow-tls' ? {
+					version: strToInt(cfg.plugin_opts_shadowtls_version),
+					password: cfg.plugin_opts_thetlspassword
+				} : null,
+				// restls
+				"restls-opts": cfg.plugin_type === 'restls' ? {
+					password: cfg.plugin_opts_thetlspassword,
+					"version-hint": cfg.plugin_opts_restls_versionhint,
+					"restls-script": cfg.plugin_opts_restls_script
+				} : null,
+				// jls
+				"jls-opts": cfg.plugin_type === 'jls' ? {
+					username: cfg.plugin_opts_thetlsusername,
+					password: cfg.plugin_opts_thetlspassword
+				} : null,
+			} : {
+				// snell / shadowsocks
+				plugin: cfg.type === 'snell' ? null : cfg.plugin_type,
+				...arrToObj([[cfg.type === 'snell' ? "obfs-opts" : "plugin-opts",
+					{
+						mode: (cfg.type === 'snell' && cfg.plugin_type !== 'obfs') ? cfg.plugin_type : cfg.plugin_opts_obfsmode,
+						host: cfg.plugin_opts_host,
+						username: cfg.plugin_opts_thetlsusername,
+						password: cfg.plugin_opts_thetlspassword,
+						version: strToInt(cfg.plugin_opts_shadowtls_version),
+						alpn: cfg.tls_alpn, // Array
+						"version-hint": cfg.plugin_opts_restls_versionhint,
+						"restls-script": cfg.plugin_opts_restls_script
+					}
+				]])
+			}
+		) : {}),
+
+		/* SSH / WireGuard / Masque */
 		/* TLS fields */
-		tls: (cfg.type in ['trojan', 'anytls', 'hysteria', 'hysteria2', 'tuic', 'trusttunnel']) ? null : strToBool(cfg.tls),
+		...(strToBool(cfg.tls) ? {tls: cfg.type in ['trojan', 'anytls', 'tuic', 'hysteria', 'hysteria2', 'shadowquic', 'trusttunnel', 'masque'] ? null : true} : {}),
 		"disable-sni": strToBool(cfg.tls_disable_sni),
-		...arrToObj([[(cfg.type in ['vmess', 'vless']) ? 'servername' : 'sni', cfg.tls_sni]]),
+		...(cfg.tls_sni ? arrToObj([[cfg.type in ['vmess', 'vless'] ? 'servername' : 'sni', cfg.tls_sni]]) : {}),
 		fingerprint: cfg.tls_fingerprint,
-		alpn: cfg.tls_alpn, // Array
+		alpn: strToBool(cfg.tls) ? cfg.tls_alpn : null, // Array
+		"name-cert-verify": cfg.tls_name_cert_verify,
 		"skip-cert-verify": strToBool(cfg.tls_skip_cert_verify),
 		certificate: cfg.tls_cert_path, // mTLS
-		"private-key": cfg.tls_key_path, // mTLS
+		"private-key": cfg.masque_private_key || cfg.wireguard_private_key || cfg.ssh_priv_key || cfg.tls_key_path, // mTLS/SSH/WireGuard/Masque
+		"public-key": cfg.masque_endpoint_public_key || cfg.wireguard_peer_public_key, // WireGuard/Masque
 		"client-fingerprint": cfg.tls_client_fingerprint,
 		"ech-opts": cfg.tls_ech === '1' ? {
 			enable: true,
@@ -734,7 +803,9 @@ uci.foreach(uciconf, ucipgrp, (cfg) => {
 		"include-all": strToBool(cfg.include_all),
 		"include-all-proxies": strToBool(cfg.include_all_proxies),
 		"include-all-providers": strToBool(cfg.include_all_providers),
-		"empty-fallback": cfg.empty_fallback ? get_proxy(cfg.empty_fallback) : null,
+		"empty-fallback": cfg.empty_fallback ? get_proxy(cfg.empty_fallback, true) : null,
+		// Select fields
+		"default-selected": cfg.default_selected ? get_proxy(cfg.default_selected, true) : null,
 		// Url-test fields
 		tolerance: (cfg.type === 'url-test') ? strToInt(cfg.tolerance) ?? 150 : null,
 		// Load-balance fields
@@ -792,18 +863,20 @@ uci.foreach(uciconf, uciprov, (cfg) => {
 				"additional-prefix": cfg.override_prefix,
 				"additional-suffix": cfg.override_suffix,
 				"proxy-name": isEmpty(cfg.override_replace) ? null : map(cfg.override_replace, obj => json(obj)),
-				// Configuration Items
+				// Other configuration items
 				tfo: strToBool(cfg.override_tfo),
 				mptcp: strToBool(cfg.override_mptcp),
 				udp: (cfg.override_udp === '0') ? null : true,
 				"udp-over-tcp": strToBool(cfg.override_uot),
 				up: cfg.override_up ? cfg.override_up + ' Mbps' : null,
 				down: cfg.override_down ? cfg.override_down + ' Mbps' : null,
+				"name-cert-verify": cfg.override_name_cert_verify,
 				"skip-cert-verify": cfg.override_skip_cert_verify ? strToBool(cfg.override_skip_cert_verify) || false : null,
 				"dialer-proxy": dialerproxy[cfg['.name']]?.detour,
 				"interface-name": cfg.override_interface_name,
 				"routing-mark": strToInt(cfg.override_routing_mark) || null,
-				"ip-version": cfg.override_ip_version
+				"ip-version": cfg.override_ip_version,
+				"override-expr": cfg.override_expr
 			},
 			/* General fields */
 			filter: parse_filter(cfg.filter),

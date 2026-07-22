@@ -12,7 +12,7 @@ PKG_MAINTAINER:=Douglas Orend <doug.orend2@gmail.com>
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/fpirsch/twin-bcrypt
 PKG_SOURCE_VERSION:=v$(PKG_VERSION)
-PKG_MIRROR_HASH:=844acb153dded8e24fba414f9995f0bcdb8eceee39217aaf9e4ce8c3ab93910e
+PKG_MIRROR_HASH:=2cd794be9284c4d8874ad27d65366c63c70324a7f3660c8bd33aa7e315683f4d
 
 include $(INCLUDE_DIR)/package.mk
 
