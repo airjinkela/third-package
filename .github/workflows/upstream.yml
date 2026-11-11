@@ -99,7 +99,7 @@ jobs:
         git_sparse_clone v5 https://github.com/sbwml/luci-app-mosdns luci-app-mosdns v2dat
         git_sparse_clone main https://github.com/sbwml/openwrt_pkgs luci-app-socat
         git_sparse_clone openwrt-24.10 https://github.com/RuijieNetworksCommunity/immortalwrt-mt798x-luci themes/luci-theme-design
-        git_sparse_clone master https://github.com/fw876/helloworld shadowsocksr-libev shadowsocks-libev luci-app-ssr-plus dns2socks-rust
+        git_sparse_clone dev https://github.com/fw876/helloworld shadowsocksr-libev shadowsocks-libev luci-app-ssr-plus dns2socks-rust
         git_sparse_clone master https://github.com/coolsnowwolf/packages net/uugamebooster
         git_sparse_clone main https://github.com/linkease/istore-packages luci-app-uugamebooster qBittorrent-EE luci-app-qbittorrent-ee
     - name: Delete duplicated packages
