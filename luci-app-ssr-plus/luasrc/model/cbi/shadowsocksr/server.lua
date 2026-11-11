@@ -105,8 +105,14 @@ end
 o.rmempty = false
 
 o = sec:option(DummyValue, "type", translate("Server Type"))
-function o.cfgvalue(...)
-	return Value.cfgvalue(...) or "ss"
+function o.cfgvalue(self, section)
+    local val = Value.cfgvalue(self, section) or "ss"
+    if val == "vmess" then return "VMess (Xray)"
+    elseif val == "vless" then return "VLESS (Xray)"
+    elseif val == "trojan" then return "Trojan (Xray)"
+    elseif val == "shadowsocks" then return "Shadowsocks (Xray)"
+    elseif val == "ssr-xray" then return "ShadowsocksR (Xray)"
+    else return val end
 end
 
 o = sec:option(DummyValue, "server_port", translate("Server Port"))
@@ -121,6 +127,7 @@ end
 
 o = sec:option(DummyValue, "encrypt_method", translate("Encrypt Method"))
 function o.cfgvalue(self, section)
+	if self.map:get(section, "type") == "ssr-xray" then return (self.map:get(section, "ssr_method") or "-"):upper() end
 	local method = self.map:get(section, "encrypt_method") or self.map:get(section, "encrypt_method_ss")
 	return method and method:upper() or "-"
 end

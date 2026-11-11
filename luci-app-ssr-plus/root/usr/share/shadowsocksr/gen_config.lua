@@ -2,21 +2,33 @@
 
 require "luci.sys"
 local ucursor = require "luci.model.uci".cursor()
-local datatypes = require "luci.cbi.datatypes"
 local json = require "luci.jsonc"
 
+-- An omitted value reaches us either as a missing argument or as an empty
+-- string, depending on whether the caller quoted the expansion. Empty strings
+-- are truthy in Lua, so "arg[n] or default" alone does not cover both.
+local function argv(n, default)
+	local value = arg[n]
+	if value == nil or value == "" then
+		return default
+	end
+	return value
+end
+
 local server_section = arg[1]
-local proto          = arg[2] or "tcp"
-local local_port     = arg[3] or "0"
-local socks_port     = arg[4] or "0"
+local proto          = argv(2, "tcp")
+local local_port     = argv(3, "0")
+local socks_port     = argv(4, "0")
 
-local chain          = arg[5] or "0"
+local chain          = argv(5, "0")
 
-local GLOBAL = {
-	DNS_SERVER = {},
-	DNS_HOSTNAME = {},
-	VPS_EXCLUDE = {}
-}
+-- trim
+local function trim(text)
+	if not text or text == "" then
+		return ""
+	end
+	return (text:gsub("^%s*(.-)%s*$", "%1"))
+end
 
 -- 辅助函数：拆分字符串（若 luci.util 未加载则定义）
 local function split(str, pat)
@@ -35,30 +47,75 @@ end
 local chain_local_port = split(chain, "/")[2] or "0"
 
 local server = ucursor:get_all("shadowsocksr", server_section)
+-- AnyTLS subscriptions previously used a standalone type with no launcher.
+if server.type == "anytls" then
+	server.type = "v2ray"
+	server.v2ray_protocol = "anytls"
+end
+if server.v2ray_protocol == "anytls" and server.tls == nil then
+	server.tls = "1"
+end
 local socks_server = ucursor:get_all("shadowsocksr", "@socks5_proxy[0]") or {}
 local xray_fragment = ucursor:get_all("shadowsocksr", "@global_xray_fragment[0]") or {}
 local xray_noise = ucursor:get_all("shadowsocksr", "@xray_noise_packets[0]") or {}
+local default_node_local_port = ucursor:get_first("shadowsocksr", "global", "default_node_local_port", "1234")
+local dns_mode = ucursor:get_first("shadowsocksr", "global", "pdnsd_enable", "0")
+local ipv6_support = ucursor:get_first("shadowsocksr", "global", "ipv6_support", "0") == "1"
+local redir_address = ipv6_support and "::" or "0.0.0.0"
+local redir_host = ipv6_support and "[::]" or "0.0.0.0"
+local dns_ipv4_only = ucursor:get_first("shadowsocksr", "global", "filter_aaaa")
+if not dns_ipv4_only or dns_ipv4_only == "" then
+	dns_ipv4_only = ucursor:get_first("shadowsocksr", "global", "mosdns_ipv6", "1")
+end
+if ipv6_support then dns_ipv4_only = "0" end
+local builtin_dns_server = ucursor:get_first("shadowsocksr", "global", "tunnel_forward", "8.8.4.4:53")
 local outbound_settings = nil
 local xray_version = nil
 local xray_version_val = 0
+local xray_builtin_dns = nil
 
 local node_id = server_section
 local remarks = server.alias or ""
 local b64decode = nixio.bin.b64decode
 local b64encode = nixio.bin.b64encode
+local effective_node_local_port = tonumber(server.local_port) or tonumber(default_node_local_port) or 1234
 
--- 解析 URL（简单实现，仅用于 DoH）
-local function parseURL(url)
-	if not url then return nil end
-	local schema, rest = url:match("^(https?)://(.*)$")
-	if not schema then return nil end
-	local host, port_str = rest:match("^([^:]+):?(%d*)/?.*$")
-	local port = tonumber(port_str) or (schema == "https" and 443 or 80)
-	return { host = host, port = port, schema = schema }
+if server.type == "ss-rust" then
+	server.type = "ss"
 end
 
-if server.type == "ss-rust" or server.type == "ss-libev" then
-    server.type = "ss"
+local function parse_realm_uri(uri)
+	uri = trim(uri)
+	if uri == "" then return nil end
+	-- realm[+http]://token@server/realm_id?query
+	local scheme = (uri:match("^realm%+http://") and "realm+http") or (uri:match("^realm://") and "realm")
+	if not scheme then return nil end
+	uri = uri:gsub("^realm%+http://", ""):gsub("^realm://", "")
+	local token, server_url, realm_id, query = uri:match("^([^@]+)@([^/]+)/([^?]*)%??(.*)$")
+	if not token or not server_url or not realm_id then return nil end
+	realm_id = realm_id:gsub("/+$", "")
+	local address, port = server_url:match("^%[([^%]]+)%]:(%d+)$") --ipv6:port
+	if not address then
+		address, port = server_url:match("^([^:]+):(%d+)$") --ipv4[domain]:port
+	end
+	address = address or server_url:match("^%[([^%]]+)%]$") or server_url
+	port = tonumber(port) or (scheme == "realm+http" and 80 or 443)
+	local realm = {
+		scheme = scheme,
+		token = token,
+		server_url = server_url,
+		address = address,
+		port = port,
+		realm_id = realm_id
+	}
+	-- 解析 query 中的 stun=
+	local stun_servers
+	for v in (query or ""):gmatch("[Ss][Tt][Uu][Nn]=([^&]+)") do
+		stun_servers = stun_servers or {}
+		stun_servers[#stun_servers + 1] = v
+	end
+	realm.stun_servers = stun_servers
+	return realm
 end
 
 -- base64 解码
@@ -120,9 +177,25 @@ local function cleanEmptyTables(t)
 	return next(t) and t or nil
 end
 
+local function format_host(host)
+	host = tostring(host or "")
+	if host ~= "" and host:find(":", 1, true) and not host:match("^%[.*%]$") then
+		return "[" .. host .. "]"
+	end
+	return host
+end
+
+local function format_host_port(host, port)
+	host = format_host(host)
+	if port == nil or port == "" then
+		return host
+	end
+	return host .. ":" .. tostring(port)
+end
+
 -- 确保正确判断程序是否存在
 local function is_finded(e)
-	return luci.sys.exec(string.format('type -t -p "%s" 2>/dev/null', e)) ~= ""
+	return luci.sys.exec(string.format('type -t -p "%s" -p "/usr/libexec/%s" 2>/dev/null', e, e)) ~= ""
 end
 
 -- 获取 Xray 版本号
@@ -203,20 +276,33 @@ function wireguard()
 	-- 处理 reserved 字段，支持逗号分隔的数字或 Base64 编码
 	local reserved = nil
 	if server.reserved then
-		local bytes = {}
-		if not server.reserved:match("[^%d,]+") then
-			-- 纯数字和逗号，解析为数字列表
-			server.reserved:gsub("%d+", function(b)
-				bytes[#bytes + 1] = tonumber(b)
-			end)
-		else
-			-- Base64 编码的二进制数据
-			local result = base64Decode(server.reserved)
-			for i = 1, #result do
-				bytes[i] = result:byte(i)
+		local all_bytes = {}
+		local reserved_values = server.reserved
+
+		-- 确保是 table 类型
+		if type(reserved_values) ~= "table" then
+			reserved_values = {reserved_values}
+		end
+
+		for _, reserved_str in ipairs(reserved_values) do
+			if type(reserved_str) == "string" then
+				if not reserved_str:match("[^%d,]+") then
+					-- 数字和逗号格式
+					reserved_str:gsub("%d+", function(b)
+						all_bytes[#all_bytes + 1] = tonumber(b)
+					end)
+				else
+					-- Base64 格式
+					local result = base64Decode(reserved_str)
+					if result then
+						for i = 1, #result do
+							all_bytes[#all_bytes + 1] = result:byte(i)
+						end
+					end
+				end
 			end
 		end
-		reserved = #bytes > 0 and bytes or nil
+		reserved = #all_bytes > 0 and all_bytes or nil
 	end
 
 	outbound_settings = {
@@ -226,7 +312,7 @@ function wireguard()
 			{
 				publicKey = server.peer_pubkey,
 				preSharedKey = server.preshared_key,
-				endpoint = server.server .. ":" .. server.server_port,
+				endpoint = format_host_port(server.server, server.server_port),
 				keepAlive = tonumber(server.keepaliveperiod),
 				allowedIPs = (server.allowedips) or nil,
 			}
@@ -235,6 +321,13 @@ function wireguard()
 		reserved = reserved,
 		mtu = tonumber(server.mtu)
 	}
+	if server.finalmask and server.finalmask ~= "" then
+		local ok, fm = pcall(json.parse, base64Decode(server.finalmask))
+		if ok and type(fm) == "table" then
+			outbound_settings.streamSettings = outbound_settings.streamSettings or {}
+			outbound_settings.streamSettings.finalmask = fm
+		end
+	end
 end
 function xray_hysteria2()
 	outbound_settings = {
@@ -242,6 +335,15 @@ function xray_hysteria2()
 		address = server.server,
 		port = tonumber(server.server_port)
 	}
+
+	-- Realm 支持：使用 Realm 服务器地址覆盖默认地址
+	if server.v2ray_protocol == "hysteria2" and server.hysteria2_realms then
+		local realm = parse_realm_uri(server.hysteria2_realm_url)
+		if realm then
+			outbound_settings.address = realm.address
+			outbound_settings.port = realm.port
+		end
+	end
 end
 local outbound = {}
 function outbound:new(o)
@@ -261,6 +363,42 @@ function outbound:handleIndex(index)
 		trojan = function()
 			trojan_shadowsocks()
 		end,
+		snell = function()
+			outbound_settings = {
+				address = server.server, port = tonumber(server.server_port),
+				psk = server.snell_psk, version = tonumber(server.snell_version) or 4,
+				obfs = server.snell_obfs or "", obfsHost = server.snell_obfs_host,
+				reuse = server.snell_reuse == "1"
+			}
+		end,
+		tuic = function()
+			local version = tonumber(server.xray_tuic_version) or 5
+			local alpn = {}
+			for value in (server.tuic_alpn or ""):gmatch("[^,]+") do alpn[#alpn + 1] = value end
+			if #alpn == 0 then alpn = {"h3"} end
+			outbound_settings = {
+				address = server.server, port = tonumber(server.server_port), version = version,
+				token = version == 4 and server.xray_tuic_token or nil,
+				uuid = version == 5 and server.tuic_uuid or nil,
+				password = version == 5 and server.tuic_passwd or nil,
+				serverName = server.tls_host, certificateFile = server.xray_tuic_ca,
+				allowInsecure = server.insecure == "1",
+				alpn = alpn,
+				congestionControl = server.congestion_control or "cubic",
+				udpRelayMode = server.udp_relay_mode or "native",
+				heartbeatInterval = (tonumber(server.heartbeat) or 10) * 1000,
+				requestTimeout = (tonumber(server.timeout) or 8) * 1000,
+				reduceRtt = server.zero_rtt_handshake == "1"
+			}
+		end,
+		shadowsocksr = function()
+			outbound_settings = {
+				address = server.server, port = tonumber(server.server_port),
+				password = server.password, method = server.ssr_method or "aes-128-cfb",
+				protocol = server.ssr_protocol or "origin", protocolParam = server.protocol_param,
+				obfs = server.ssr_obfs or "plain", obfsParam = server.obfs_param
+			}
+		end,
 		shadowsocks = function()
 			trojan_shadowsocks()
 		end,
@@ -272,6 +410,29 @@ function outbound:handleIndex(index)
 		end,
 		wireguard = function()
 			wireguard()
+		end,
+		naive = function()
+			outbound_settings = {
+				address = server.server, port = tonumber(server.server_port),
+				username = server.username, password = server.password,
+				serverName = server.tls_host,
+				certificateFile = server.naive_certificate_file,
+				quic = server.naive_quic == "1",
+				udpOverTcp = server.naive_udp_over_tcp == "1",
+				insecureConcurrency = tonumber(server.naive_concurrency),
+				quicCongestionControl = server.naive_quic_congestion,
+				echConfigList = server.naive_ech_config
+			}
+		end,
+		anytls = function()
+			outbound_settings = {
+				address = server.server,
+				port = tonumber(server.server_port),
+				password = server.password,
+				idleSessionCheckInterval = tonumber(server.anytls_idle_session_check_interval),
+				idleSessionTimeout = tonumber(server.anytls_idle_session_timeout),
+				minIdleSession = tonumber(server.anytls_min_idle_session)
+			}
 		end,
 		hysteria2 = function()
 			xray_hysteria2()
@@ -299,6 +460,35 @@ local Xray = {
 	-- 初始化 outbounds 表
 	outbounds = {},
 }
+
+if server.type == "v2ray" and dns_mode == "7" and os.getenv("SSR_SWITCH_PROBE") ~= "1" then
+	local dns_host = builtin_dns_server:match("^([^:]+)") or "8.8.4.4"
+	local dns_port = tonumber(builtin_dns_server:match(":(%d+)$")) or 53
+
+	Xray.dns = {
+		queryStrategy = (dns_ipv4_only == "1") and "UseIPv4" or "UseIP",
+		servers = {
+			string.format("tcp://%s:%d", dns_host, dns_port)
+		}
+	}
+
+	table.insert(Xray.inbounds, {
+		listen = "127.0.0.1",
+		port = 5335,
+		protocol = "dokodemo-door",
+		settings = {
+			address = dns_host,
+			port = dns_port,
+			network = "tcp,udp"
+		},
+		tag = "builtin-dns-in"
+	})
+
+	xray_builtin_dns = {
+		address = dns_host,
+		port = dns_port
+	}
+end
 	-- 传入连接
 	-- 添加 dokodemo-door 配置，如果 local_port 不为 0
 if local_port ~= "0" then
@@ -345,22 +535,24 @@ end
 	-- 开启 socks 代理
 	-- 检查是否启用 socks 代理
 if proto and proto:find("tcp") and socks_port ~= "0" then
-    table.insert(Xray.inbounds, {
-        -- socks
-        protocol = "socks",
-        port = tonumber(socks_port),
-        settings = {
+	local auth = (socks_server.socks5_auth and socks_server.socks5_auth ~= "noauth")
+		and {{
+			user = socks_server.socks5_user,
+			pass = socks_server.socks5_pass
+		}} or nil
+
+	table.insert(Xray.inbounds, {
+		-- socks
+		protocol = "socks",
+		port = tonumber(socks_port),
+		settings = {
 			auth = socks_server.socks5_auth or "noauth",
 			udp = true,
-			mixed = ((socks_server.socks5_mixed == '1') and true or false) or (socks_server.server == 'same') and nil,
-			accounts = (socks_server.server ~= "same" and (socks_server.socks5_auth and socks_server.socks5_auth ~= "noauth")) and {
-				{
-					user = socks_server.socks5_user,
-					pass = socks_server.socks5_pass
-				}
-			} or nil
-		} or nil
-    })
+			mixed = socks_server.socks5_mixed == "1" or nil,
+			accounts = (xray_version_val <= 260503) and auth or nil,
+			users = (xray_version_val > 260503) and auth or nil
+		}
+	})
 end
 
 -- 传出连接
@@ -371,7 +563,7 @@ Xray.outbounds = {
 		tag = (remarks ~= nil and remarks ~= "") and (node_id .. ":" .. remarks) or node_id,
 		-- 底层传输配置
 		streamSettings = (server.v2ray_protocol ~= "wireguard") and {
-			network = (server.v2ray_protocol == "hysteria2") and "hysteria" or (server.transport or "raw"),
+			[(xray_version_val >= 260711) and "method" or "network"] = (server.v2ray_protocol == "hysteria2") and "hysteria" or (server.transport or "raw"),
 			security = (server.xtls == '1') and "xtls" or (server.tls == '1') and "tls" or (server.reality == '1') and "reality" or nil,
 			tlsSettings = (server.tls == '1') and {
 				-- tls
@@ -389,16 +581,23 @@ Xray.outbounds = {
 				fingerprint = server.fingerprint,
 				allowInsecure = (function()
 					if server.tls_CertSha and server.tls_CertSha ~= "" then return nil end
-					if os.date("%Y.%m.%d") < "2026.06.01" then
-						return server.insecure == "1"
+					return server.insecure == "1"
+				end)(),
+				serverName = server.tls_host,
+				certificates = (function()
+					if server.masque_certificate == "1" and server.masque_certificate_pem and server.masque_certificate_pem ~= "" then
+						return {
+							certificate = split(server.masque_certificate_pem:gsub("\\n", "\n"), "\n"),
+							usage = "verify"
+						}
+					elseif server.certificate == "1" and server.certpath and server.certpath ~= "" then
+						return {
+							usage = "verify",
+							certificateFile = server.certpath
+						}
 					end
 					return nil
 				end)(),
-				serverName = server.tls_host,
-				certificates = server.certificate and {
-					usage = "verify",
-					certificateFile = server.certpath
-				} or nil,
 				pinnedPeerCertSha256 = (function()
 					if xray_version_val < 260131 then return nil end
 					if not server.tls_CertSha then return "" end
@@ -523,6 +722,28 @@ Xray.outbounds = {
 				initial_windows_size = server.initial_windows_size and tonumber(server.initial_windows_size) or nil,
 				user_agent = server.user_agent
 			} or nil,
+			masqueSettings = (server.v2ray_protocol == "masque") and {
+				path = (server.masque_path and server.masque_path ~= "") and server.masque_path or nil,
+				warp = (server.masque_warp == "1") and {
+					privateKey = (server.masque_warp_private_key or ""):gsub("\\n", "\n"),
+					publicKey = (server.masque_warp_public_key or ""):gsub("\\n", "\n"),
+					address = server.masque_warp_address
+				} or nil,
+				headers = (function()
+					local headers = {}
+					if server.auth_enable == "1" and server.masque_warp ~= "1" and ((server.username and server.username ~= "") or (server.password and server.password ~= "")) then
+						headers["authorization"] = "Basic " .. base64Encode((server.username or "") .. ":" .. (server.password or ""))
+					end
+					if server.user_agent and server.user_agent ~= "" then
+						headers["user-agent"] = server.user_agent
+					end
+					for line in (server.masque_headers or ""):gsub("\\n", "\n"):gmatch("[^\r\n]+") do
+						local key, value = line:match("^%s*([^:]+):%s*(.-)%s*$")
+						if key then headers[trim(key):lower()] = value end
+					end
+					return next(headers) and headers or nil
+				end)()
+			} or nil,
 			hysteriaSettings = (server.v2ray_protocol == "hysteria2") and {
 				-- hysteria2
 				version = 2,
@@ -532,32 +753,79 @@ Xray.outbounds = {
 				local finalmask = {}
 				local PT = server.v2ray_protocol
 				local TP = server.transport
-				if server.transport == "kcp" then
-					local map = {none = "none", srtp = "header-srtp", utp = "header-utp", ["wechat-video"] = "header-wechat",
-						dtls = "header-dtls", wireguard = "header-wireguard", dns = "header-dns"}
+				if TP == "kcp" then
 					local udp = {}
-					if server.kcp_guise and server.kcp_guise ~= "none" then
-						local g = { type = map[server.kcp_guise] }
-						if server.kcp_guise == "dns" and server.kcp_domain and server.kcp_domain ~= "" then
-							g.settings = { domain = server.kcp_domain }
+					if xray_version_val < 260601 then
+						local map = {none = "none", srtp = "header-srtp", utp = "header-utp", ["wechat-video"] = "header-wechat",
+							dtls = "header-dtls", wireguard = "header-wireguard", dns = "header-dns"}
+						if server.kcp_guise and server.kcp_guise ~= "none" then
+							local g = { type = map[server.kcp_guise] }
+							if server.kcp_guise == "dns" and server.kcp_domain and server.kcp_domain ~= "" then
+								g.settings = { domain = server.kcp_domain }
+							end
+							udp[#udp+1] = g
 						end
-						udp[#udp+1] = g
+						local c = { type = (server.seed and server.seed ~= "") and "mkcp-aes128gcm" or "mkcp-original" }
+						if server.seed and server.seed ~= "" then
+							c.settings = { password = server.seed }
+						end
+						udp[#udp+1] = c
+					else
+						local map = {none = "none", srtp = "srtp", utp = "utp", ["wechat-video"] = "wechat",
+							dtls = "dtls", wireguard = "wireguard", dns = "dns"}
+						local s = { type = "mkcp-legacy" }
+						if server.seed and server.seed ~= "" then
+							s.settings = { value = server.seed }
+						end
+						udp[#udp+1] = s
+						if server.kcp_guise and server.kcp_guise ~= "none" then
+							local g = { type = "mkcp-legacy" }
+							g.settings = { header = map[server.kcp_guise] }
+							if server.kcp_guise == "dns" and server.kcp_domain and server.kcp_domain ~= "" then
+								g.settings.value = server.kcp_domain
+							end
+							udp[#udp+1] = g
+						end
 					end
-					local c = { type = (server.seed and server.seed ~= "") and "mkcp-aes128gcm" or "mkcp-original" }
-					if server.seed and server.seed ~= "" then
-						c.settings = { password = server.seed }
-					end
-					udp[#udp+1] = c
 					finalmask.udp = udp
 				elseif PT == "hysteria2" then
+					local udp = {}
 					if (server.flag_obfs == "1" and (server.obfs_type and server.obfs_type ~= "")) then
-						finalmask.udp = {{
-							type = server.obfs_type,
+						local o = {
+							type = "salamander",
 							settings = server.salamander and {
 								password = server.salamander
 							} or nil
-						}}
+						}
+						if server.obfs_type == "gecko" then
+							local min = tonumber(server.obfs_MinPacketSize) or 512
+							local max = tonumber(server.obfs_MaxPacketSize) or 1200
+							if min <= 0 or min > max or max > 2048 then
+								min = 512
+								max = 1200
+							end
+							o.settings.packetSize = min .. "-" .. max
+						end
+						udp[#udp+1] = o
 					end
+					if server.hysteria2_realms then
+						local realm = parse_realm_uri(server.hysteria2_realm_url)
+						local url, stun
+						if realm then
+							url = realm.scheme .. "://" .. realm.token .. "@" .. realm.server_url .. "/" .. realm.realm_id
+							stun = realm.stun_servers or server.hysteria2_realm_stun
+						end
+						local r = {
+							type = "realm",
+							settings = {
+								url = url,
+								stunServers = stun,
+								portMapping = (node.hysteria2_realm_upnp == "1") and { enabled = true } or nil
+							}
+						}
+						udp[#udp+1] = r
+					end
+					finalmask.udp = udp
 					local up = tonumber(server.uplink_capacity) or 0
 					local down = tonumber(server.downlink_capacity) or 0
 					finalmask.quicParams = {
@@ -565,7 +833,7 @@ Xray.outbounds = {
 						brutalUp = up > 0 and (up .. "mbps") or nil,
 						brutalDown = down > 0 and (down .. "mbps") or nil,
 						udpHop = (server.flag_port_hopping == "1") and {
-							ports = string.gsub(server.port_range, ":", "-"),
+							ports = server.port_range and string.gsub(server.port_range, ":", "-"),
 							interval = (function(v)
 								if not v then return 30 end
 								if v:find("-", 1, true) then
@@ -602,15 +870,53 @@ Xray.outbounds = {
 					local n_maxsplit = xray_fragment.fragment_maxSplit
 					--local domainstr = xray_noise.domainStrategy
 					finalmask.tcp = finalmask.tcp or {}
+					-- 构建 fragment settings
+					local fragment_settings = {
+						packets = (n_packets and n_packets ~= "") and n_packets or nil,
+						maxSplit = (n_maxsplit and n_maxsplit ~= "") and n_maxsplit or nil
+					}
+					-- 根据 Xray 版本决定使用旧格式还是新格式
+					if xray_version_val <= 260601 then
+						-- 旧版本：使用 length 和 delay（单个值）
+						if n_length and n_length ~= "" then
+							fragment_settings.length = n_length
+						end
+						if n_delay and n_delay ~= "" then
+							if type(n_delay) == "string" and n_delay:find("-", 1, true) then
+								fragment_settings.delay = n_delay
+							else
+								fragment_settings.delay = tonumber(n_delay)
+							end
+						end
+					else
+						-- 新版本：使用 lengths 和 delays（数组）
+						-- 将逗号分隔的字符串拆分为数组
+						local function split_to_array(str)
+							if not str or str == "" then return nil end
+								local result = {}
+								local trimmed = trim(str)
+								if trimmed and trimmed ~= "" then
+									trimmed:gsub("[^,]+", function(w)
+									w = w:gsub("%s+", "")
+									if w ~= "" then
+										result[#result + 1] = w
+									end
+								end)
+							end
+							return #result > 0 and result or nil
+						end
+						local lengths_array = split_to_array(n_length)
+						if lengths_array then
+							fragment_settings.lengths = lengths_array
+						end
+						local delays_array = split_to_array(n_delay)
+						if delays_array then
+							fragment_settings.delays = delays_array
+						end
+					end
 					finalmask.tcp[#finalmask.tcp + 1] = {
 						type = "fragment",
-						settings = {
-							--domainStrategy = (xray_fragment.noise == "1" and xray_noise.enabled == "1") and domainstr or nil,
-							packets = (n_packets and n_packets ~= "") and n_packets or nil,
-							length = (n_length and n_length ~= "") and n_length or nil,
-							delay = (type(n_delay) == "string" and string.find(n_delay, "-")) and n_delay or (n_delay and tonumber(n_delay)),
-							maxSplit = (n_maxsplit and n_maxsplit ~= "") and n_maxsplit or nil
-						}
+						settings = fragment_settings
 					}
 				end
 				if xray_fragment.noise == "1" and (TP == "kcp" or (TP == "xhttp" and (server.tls_alpn == "h3" or server.tls_alpn == "h3,h2"))) then 
@@ -645,11 +951,10 @@ Xray.outbounds = {
 			end)(),
 			sockopt = {
 				mark = 255,
-				domainStrategy = server.domain_strategy or "UseIP",
 				tcpFastOpen = (function()
 					if server.transport == "xhttp" then
 						return (server.fast_open == "1") and true or false
-					elseif server.v2ray_protocol == "hysteria2" then
+					elseif server.v2ray_protocol == "hysteria2" or server.v2ray_protocol == "masque" then
 						return (server.fast_open == "1") and true or nil
 					else
 						return nil
@@ -660,10 +965,10 @@ Xray.outbounds = {
 				tcpcongestion = server.custom_tcpcongestion, -- 连接服务器节点的 TCP 拥塞控制算法
 				-- 出站的 dialerProxy（与 fragment 中的 tag 保持一致）
 				dialerProxy = (xray_fragment.fragment == "1" or xray_fragment.noise == "1") and
-				              ((remarks ~= nil and remarks ~= "") and (node_id .. "." .. remarks) or node_id) or nil
+				              ((remarks and remarks ~= "") and (node_id .. "." .. remarks) or ("direct" .. "." .. node_id)) or nil
 			}
 		} or nil,
-		mux = (server.v2ray_protocol ~= "hysteria2" and server.v2ray_protocol ~= "wireguard") and {
+		mux = (server.v2ray_protocol ~= "hysteria2" and server.v2ray_protocol ~= "wireguard" and server.v2ray_protocol ~= "anytls" and server.v2ray_protocol ~= "masque") and {
 			-- mux
 			enabled = (server.mux == "1"), -- Mux
 			concurrency = (server.mux == "1" and (tonumber(server.concurrency) or -1)) or nil, -- TCP 最大并发连接数
@@ -673,25 +978,78 @@ Xray.outbounds = {
 	}
 }
 
-table.insert(Xray.outbounds, {
-	protocol = "freedom",
-	tag = "direct",
-	settings = {
-		domainStrategy = server.domain_strategy or "UseIP"   -- 可根据需要改为 direct_dns_query_strategy
-	},
-    streamSettings = {
-		sockopt = {
-			mark = 255
-		}
+-- These protocols own their framing, obfuscation and multiplexing.
+-- Preserve Xray socket marks and dialer chains.
+if server.v2ray_protocol == "naive" or server.v2ray_protocol == "shadowsocksr" or server.v2ray_protocol == "tuic" or server.v2ray_protocol == "snell" then
+	local ob = Xray.outbounds[1]
+	ob.streamSettings = { network = "raw", sockopt = ob.streamSettings.sockopt }
+	ob.mux = nil
+end
+
+if server.type == "v2ray" and server.transport == "kcptun" then
+	local supported = {vmess = true, vless = true, trojan = true, shadowsocks = true, socks = true, http = true}
+	assert(supported[server.v2ray_protocol], "Kcptun requires a supported stream proxy protocol")
+	assert(server.tls ~= "1" and server.reality ~= "1" and server.xtls ~= "1", "Kcptun cannot be combined with stream TLS or REALITY")
+	assert(server.kcp_enable ~= "1", "Native Kcptun cannot be combined with the external Kcptun client")
+	assert(not server.tls_flow or server.tls_flow == "", "Kcptun cannot be combined with XTLS flow")
+	local options = {}
+	if server.xray_kcptun_options and server.xray_kcptun_options:match("%S") then
+		assert(server.xray_kcptun_options:match("^%s*{"), "Kcptun options must be a JSON object")
+		options = json.parse(server.xray_kcptun_options)
+		assert(type(options) == "table", "Kcptun options must be a JSON object")
+	end
+	options.key = server.xray_kcptun_key
+	options.crypt = server.xray_kcptun_crypt or "aes"
+	options.mode = server.xray_kcptun_mode or "fast"
+	options.smuxver = tonumber(server.xray_kcptun_smuxver) or 1
+	options.nocomp = server.xray_kcptun_nocomp == "1"
+	options.conn = tonumber(server.xray_kcptun_conn) or 1
+	Xray.outbounds[1].streamSettings.kcptunSettings = options
+end
+
+if server.type == "v2ray" and server.xray_shadowtls == "1" then
+	local supported = {vmess = true, vless = true, trojan = true, shadowsocks = true}
+	assert(supported[server.v2ray_protocol], "ShadowTLS requires a supported TCP proxy protocol")
+	assert((server.transport or "raw") == "raw" or server.transport == "tcp", "ShadowTLS requires RAW/TCP")
+	assert(server.tls ~= "1" and server.reality ~= "1", "ShadowTLS cannot be combined with TLS or REALITY")
+	assert(not server.tls_flow or server.tls_flow == "", "ShadowTLS cannot be combined with XTLS flow")
+	local stream = Xray.outbounds[1].streamSettings
+	stream.security = "shadowtls"
+	stream.shadowtlsSettings = {
+		version = tonumber(server.xray_shadowtls_version) or 3,
+		password = server.xray_shadowtls_password,
+		serverName = server.xray_shadowtls_sni,
+		fingerprint = server.xray_shadowtls_fingerprint or "chrome",
+		strictMode = server.xray_shadowtls_strict ~= "0",
+		allowInsecure = server.xray_shadowtls_insecure == "1"
 	}
-})
+end
+
+if xray_builtin_dns then
+	table.insert(Xray.outbounds, {
+		protocol = "dns",
+		tag = "builtin-dns-out",
+		settings = {
+			network = "tcp",
+			address = xray_builtin_dns.address,
+			port = xray_builtin_dns.port
+		}
+	})
+	Xray.routing = Xray.routing or {}
+	Xray.routing.rules = Xray.routing.rules or {}
+	table.insert(Xray.routing.rules, {
+		type = "field",
+		inboundTag = { "builtin-dns-in" },
+		outboundTag = "builtin-dns-out"
+	})
+end
 
 -- 添加带有 fragment 设置的 dialerproxy 配置
 if xray_fragment.fragment ~= "0" or (xray_fragment.noise ~= "0" and xray_noise.enabled ~= "0") then
 	local n_domainstrategy = xray_noise.domainStrategy
 	table.insert(Xray.outbounds, {
 		protocol = "freedom",
-		tag = (remarks ~= nil and remarks ~= "") and (node_id .. "." .. remarks) or node_id,
+		tag = (remarks and remarks ~= "") and (node_id .. "." .. remarks) or ("direct" .. "." .. node_id),
 		settings = (xray_fragment.noise == "1" and xray_noise.enabled == "1") and n_domainstrategy and n_domainstrategy ~= "" and {
 			domainStrategy = n_domainstrategy
 		} or nil,
@@ -701,7 +1059,7 @@ if xray_fragment.fragment ~= "0" or (xray_fragment.noise ~= "0" and xray_noise.e
 			tcpFastOpen = (function()
 				if server.transport == "xhttp" then
 					return (server.fast_open == "1") and true or false
-				elseif server.v2ray_protocol == "hysteria2" then
+				elseif server.v2ray_protocol == "hysteria2" or server.v2ray_protocol == "masque" then
 					return (server.fast_open == "1") and true or nil
 				else
 					return nil
@@ -714,121 +1072,6 @@ if xray_fragment.fragment ~= "0" or (xray_fragment.noise ~= "0" and xray_noise.e
 		}
 	})
 end
-
--- Xray DNS 解析配置
-if datatypes.hostname(server.server) and server.domain_resolver and (server.domain_resolver_dns or server.domain_resolver_dns_https) then
-	-- 解析 DNS 服务器配置
-	local dns_proto = server.domain_resolver
-	local config_address
-	local config_port
-	if dns_proto == "https" then
-		local _a = parseURL(server.domain_resolver_dns_https)
-		if _a then
-			config_address = server.domain_resolver_dns_https
-			config_port = _a.port or 443
-			if _a.hostname and datatypes.hostname(_a.hostname) then
-				GLOBAL.DNS_HOSTNAME[_a.hostname] = true
-			end
-		end
-	else
-		local server_address = server.domain_resolver_dns
-		config_port = 53
-		local parts = split(server_address, ":")
-		if #parts > 1 then
-			server_address = parts[1]
-			config_port = tonumber(parts[#parts])
-		end
-		config_address = server_address
-		if dns_proto == "tcp" then
-			config_address = dns_proto .. "://" .. server_address .. ":" .. config_port
-		end
-	end
-
-	-- 存入 GLOBAL.DNS_SERVER（去重）
-	local dns_key = dns_proto .. "|" .. config_address .. "|" .. tostring(config_port)
-	if not GLOBAL.DNS_SERVER[dns_key] then
-		GLOBAL.DNS_SERVER[dns_key] = {
-			tag = "dns-node-" .. node_id,
-			address = config_address,
-			port = config_port,
-			finalQuery = true,
-			disableCache = false,
-			serveStale = true,
-			serveExpiredTTL = 30,
-			domains = {}
-		}
-	end
-
-	-- 添加当前节点域名到该 DNS 服务器的 domains 列表
-	local domain = "full:" .. server.server
-	local exists
-	for _, d in ipairs(GLOBAL.DNS_SERVER[dns_key].domains) do
-		if d == domain then exists = true; break end
-	end
-	if not exists then
-		table.insert(GLOBAL.DNS_SERVER[dns_key].domains, domain)
-	end
-	GLOBAL.VPS_EXCLUDE[server.server] = true
-
-	-- 构建 Xray.dns
-	local dns_servers = { "localhost" }
-	for key, dns_server in pairs(GLOBAL.DNS_SERVER) do
-		table.insert(dns_servers, {
-			tag = dns_server.tag,
-			address = dns_server.address,
-			port = dns_server.port,
-			domains = dns_server.domains,
-			finalQuery = dns_server.finalQuery,
-			serveStale = dns_server.serveStale,
-			serveExpiredTTL = dns_server.serveExpiredTTL,
-			disableCache = dns_server.disableCache
-		})
-	end
-	Xray.dns = {
-		servers = dns_servers,
-		disableFallback = true,
-		disableFallbackIfMatch = true,
-		useSystemHosts = true,
-		queryStrategy = "UseIP",
-		disableCache = false,
-		tag = "dns-global"   -- 用于 routing
-	}
-end
-
--- 代理出站的 tag（与 outbound 中的 tag 保持一致）
-local proxy_tag = (remarks ~= nil and remarks ~= "") and (node_id .. ":" .. remarks) or node_id
--- 构建 routing 规则表
-local routing_rules = {}
--- 1. 为每个自定义 DNS 服务器添加直连规则（inboundTag 匹配 dns-node-xxx）
-if GLOBAL.DNS_SERVER and next(GLOBAL.DNS_SERVER) then
-	for _, dns_server in pairs(GLOBAL.DNS_SERVER) do
-		table.insert(routing_rules, {
-			inboundTag = { dns_server.tag },
-			outboundTag = "direct"
-		})
-	end
-end
-
--- 2. 添加全局 DNS 直连规则（需要 Xray.dns 中已设置 tag = "dns-global"）
-if Xray.dns and Xray.dns.tag then
-	table.insert(routing_rules, {
-		inboundTag = { "dns-global" },
-		outboundTag = "direct"
-	})
-end
-
--- 3. 添加默认规则：所有 TCP/UDP 流量走代理
-table.insert(routing_rules, {
-	network = "tcp,udp",
-	ruleTag = "default",
-	outboundTag = proxy_tag
-})
-
--- 构建 routing 对象
-Xray.routing = {
-	rules = routing_rules,
-	domainStrategy = "AsIs"
-}
 
 local cipher = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA:AES128-SHA:AES256-SHA:DES-CBC3-SHA"
 local cipher13 = "TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384"
@@ -877,14 +1120,14 @@ local trojan = {
 	}
 }
 local naiveproxy = {
-	proxy = (server.username and server.password and server.server and server.server_port) and "https://" .. server.username .. ":" .. server.password .. "@" .. server.server .. ":" .. server.server_port,
-	listen = (proto == "redir") and "redir" .. "://0.0.0.0:" .. tonumber(local_port) or "socks" .. "://0.0.0.0:" .. tonumber(local_port),
+	proxy = (server.username and server.password and server.server and server.server_port) and "https://" .. server.username .. ":" .. server.password .. "@" .. format_host_port(server.server, server.server_port),
+	listen = (proto == "redir") and "redir" .. "://" .. redir_host .. ":" .. tonumber(local_port) or "socks" .. "://0.0.0.0:" .. tonumber(local_port),
 	["insecure-concurrency"] = tonumber(server.concurrency) or 1
 }
 local ss = {
 	server = (server.kcp_enable == "1") and "127.0.0.1" or server.server,
 	server_port = tonumber(server.server_port),
-	local_address = "0.0.0.0",
+	local_address = redir_address,
 	local_port = tonumber(local_port),
 	mode = (proto == "tcp,udp") and "tcp_and_udp" or (proto .. "_only"),
 	password = server.password,
@@ -898,21 +1141,24 @@ local hysteria2 = {
 		server.server_port and 
 		(
 			server.port_range and 
-			(server.server .. ":" .. server.server_port .. "," .. string.gsub(server.port_range, ":", "-")) 
+			(format_host_port(server.server, server.server_port) .. "," .. string.gsub(server.port_range, ":", "-")) 
 			or 
-			(server.server .. ":" .. server.server_port)
+			(format_host_port(server.server, server.server_port))
 		) 
 		or 
 		(
 			server.port_range and 
-			server.server .. ":" .. string.gsub(server.port_range, ":", "-") 
+			format_host(server.server) .. ":" .. string.gsub(server.port_range, ":", "-") 
 			or 
-			server.server and server.server .. ":443"
+			server.server and format_host_port(server.server, "443")
 		)
 	),
 	bandwidth = (server.uplink_capacity or server.downlink_capacity) and {
 		up = tonumber(server.uplink_capacity) and tonumber(server.uplink_capacity) .. " mbps" or nil,
 		down = tonumber(server.downlink_capacity) and tonumber(server.downlink_capacity) .. " mbps" or nil
+	} or nil,
+	realm = (server.hysteria2_realms and server.hysteria2_realm_stun) and {
+		stunServers = server.hysteria2_realm_stun
 	} or nil,
 	socks5 = (proto:find("tcp") and tonumber(socks_port) and tonumber(socks_port) ~= 0) and {
 		listen = "0.0.0.0:" .. tonumber(socks_port),
@@ -944,18 +1190,18 @@ local hysteria2 = {
 	},
 --[[
 	tcpTProxy = (proto:find("tcp") and local_port ~= "0") and {
-		listen = "0.0.0.0:" .. tonumber(local_port)
+		listen = redir_host .. ":" .. tonumber(local_port)
 	} or nil,
 ]]--
 	tcpRedirect = (proto:find("tcp") and local_port ~= "0") and {
-		listen = "0.0.0.0:" .. tonumber(local_port)
+		listen = redir_host .. ":" .. tonumber(local_port)
 	} or nil,
 	udpTProxy = (proto:find("udp") and local_port ~= "0") and {
-		listen = "0.0.0.0:" .. tonumber(local_port)
+		listen = redir_host .. ":" .. tonumber(local_port)
 	} or nil,
 	obfs = (server.flag_obfs == "1") and {
 		type = server.obfs_type,
-		salamander = { password = server.salamander }
+		[server.obfs_type] = { password = server.salamander }
 	} or nil,
 	quic = (server.flag_quicparam == "1" ) and {
 		initStreamReceiveWindow = (server.initstreamreceivewindow and server.initstreamreceivewindow or nil),
@@ -1004,9 +1250,19 @@ local hysteria2 = {
 	fast_open = (server.fast_open == "1") and true or false,
 	lazy = (server.lazy_mode == "1") and true or false
 }
+if hysteria2.obfs and hysteria2.obfs.type == "gecko" then
+	local min = tonumber(server.obfs_MinPacketSize) or 512
+	local max = tonumber(server.obfs_MaxPacketSize) or 1200
+	if min <= 0 or min > max or max > 2048 then
+        	min = 512
+        	max = 1200
+	end
+	hysteria2.obfs.gecko.minPacketSize = min
+	hysteria2.obfs.gecko.maxPacketSize = max
+end
 local shadowtls = {
 	client = {
-		server_addr = server.server_port and server.server .. ":" .. server.server_port or nil,
+		server_addr = server.server_port and format_host_port(server.server, server.server_port) or nil,
 		listen = "127.0.0.1:" .. tonumber(local_port),
 		tls_names = server.shadowtls_sni,
 		password = server.password
@@ -1019,8 +1275,8 @@ local shadowtls = {
 local chain_sslocal = {
 	locals = local_port ~= "0" and {
 		{
-			local_address = "0.0.0.0",
-			local_port = (chain_local_port == "0" and tonumber(server.local_port) or tonumber(chain_local_port)),
+			local_address = redir_address,
+			local_port = (chain_local_port == "0" and effective_node_local_port or tonumber(chain_local_port)),
 			mode = (proto:find("tcp,udp") and "tcp_and_udp") or proto .. "_only",
 			protocol = "redir",
 			tcp_redir = "redirect",
@@ -1029,12 +1285,12 @@ local chain_sslocal = {
 		},
 		socks_port ~= "0" and {
 			protocol = "socks",
-			local_address = "0.0.0.0",
+			local_address = redir_address,
 			local_port = tonumber(socks_port)
 		} or nil
 	} or {{
 		protocol = "socks",
-		local_address = "0.0.0.0",
+		local_address = redir_address,
 		local_port = tonumber(socks_port)
 	}},
 	servers = {
@@ -1049,7 +1305,7 @@ local chain_sslocal = {
 local chain_vmess = {
 	inbounds = (local_port ~= "0") and {
 		{
-			port = (chain_local_port == "0" and tonumber(server.local_port) or tonumber(chain_local_port)),
+			port = (chain_local_port == "0" and effective_node_local_port or tonumber(chain_local_port)),
 			protocol = "dokodemo-door",
 			settings = {
 				network = proto,
@@ -1085,7 +1341,7 @@ local chain_vmess = {
 }
 local tuic = {
 	relay = {
-		server = server.server_port and server.server .. ":" .. server.server_port,
+		server = server.server_port and format_host_port(server.server, server.server_port),
 		ip = server.tuic_ip,
 		uuid = server.tuic_uuid,
 		password = server.tuic_passwd,
@@ -1183,6 +1439,14 @@ function config:handleIndex(index)
 			if chain_switch[ChainType] then
 				chain_switch[ChainType]()
 			end
+		end,
+		snell = function()
+			outbound_settings = {
+				address = server.server, port = tonumber(server.server_port),
+				psk = server.snell_psk, version = tonumber(server.snell_version) or 4,
+				obfs = server.snell_obfs or "", obfsHost = server.snell_obfs_host,
+				reuse = server.snell_reuse == "1"
+			}
 		end,
 		tuic = function()
 			print(json.stringify(tuic, 1))
