@@ -1,3 +1,17 @@
+# Translation for luci-app-qmodem-next
+msgid ""
+msgstr ""
+"Project-Id-Version: luci-app-qmodem-next\n"
+"POT-Creation-Date: 2026-09-16 00:00+0000\n"
+"PO-Revision-Date: 2026-09-16 00:00+0000\n"
+"Last-Translator: QModem contributors\n"
+"Language-Team: Chinese (Simplified)\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
 # Source: vendor/sierra.sh:437, vendor/sierra.sh:440, vendor/sierra.sh:443, vendor/sierra.sh:446
 msgid "$key"
 msgstr "$key"
@@ -1372,6 +1386,10 @@ msgstr "短信对话"
 msgid "SMS Database Path"
 msgstr "短信数据库路径"
 
+# Source: menu.d/luci-app-qmodem-next.json
+msgid "SMS Forwarder"
+msgstr "短信转发"
+
 # Source: view/qmodem/sms.js:171
 # Source: view/qmodem/sms.js
 msgid "SMS Messages"
@@ -2530,10 +2548,6 @@ msgid "Index"
 msgstr "索引"
 
 # Source: view/qmodem/sms_sim.js
-msgid "Type"
-msgstr "类型"
-
-# Source: view/qmodem/sms_sim.js
 msgid "Part"
 msgstr "部分"
 
@@ -2632,3 +2646,42 @@ msgstr "模组初始化后重新发送锁小区命令"
 # Source: view/qmodem/config_advanced.js
 msgid "Delay"
 msgstr "延迟"
+
+msgid "Country calling code (optional)"
+msgstr "国家码（可选）"
+
+msgid "As entered"
+msgstr "按原号码发送"
+
+msgid "Save for this modem"
+msgstr "保存到当前模块"
+
+msgid "Send to:"
+msgstr "实际发送至："
+
+msgid "Leave empty to send as entered, including service numbers. Use + for a complete international number. When adding a country code, omit the domestic trunk prefix."
+msgstr "留空时按原号码发送，适用于服务号码等。完整国际号码请以 + 开头。添加国家码时，请省略本地拨号前缀。"
+
+msgid "Invalid country calling code"
+msgstr "国家码无效"
+
+msgid "Invalid phone number"
+msgstr "电话号码无效"
+
+msgid "Invalid international phone number"
+msgstr "国际电话号码无效"
+
+msgid "Loading country calling code"
+msgstr "正在加载国家码"
+
+msgid "Failed to load country calling code"
+msgstr "加载国家码失败"
+
+msgid "Failed to save country calling code"
+msgstr "保存国家码失败"
+
+msgid "Boot Scan Delay"
+msgstr "开机扫描延迟"
+
+msgid "Delay automatic USB and PCIe scans after the scanner is ready, in seconds."
+msgstr "扫描器就绪后延迟执行 USB 和 PCIe 自动扫描，单位为秒。"

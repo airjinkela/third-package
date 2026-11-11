@@ -1,19 +1,17 @@
 local api = require "luci.passwall2.api"
-local appname = api.appname
-local datatypes = api.datatypes
-
 api.set_default_cbi()
 
-m = Map(appname, "Sing-Box/Xray " .. translate("Shunt Rule"))
+local datatypes = api.datatypes
+
+m = Map()
 m.redirect = api.url("rule")
-api.set_apply_on_parse(m)
 
 if not arg[1] or not m:get(arg[1]) then
 	luci.http.redirect(m.redirect)
 end
 
 function m.on_before_save(self)
-	m:set("@global[0]", "flush_set", "1")
+	self:set("@global[0]", "flush_set", "1")
 end
 
 -- Add inline CSS to map description
@@ -21,13 +19,13 @@ m.description = (m.description or "") .. [[
 <style>
 /* Scope to passwall2 CBI fields so it won't leak elsewhere */
 div[id^="cbid.passwall2."] .cbi-value-field {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1em;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1em;
 }
 div[id^="cbid.passwall2."] .cbi-checkbox {
-  display: inline-flex;
-  align-items: center;
+	display: inline-flex;
+	align-items: center;
 }
 </style>
 ]]
@@ -45,7 +43,20 @@ function clean_text(text)
 		:gsub("[ \t]*\n[ \t]*", "\n")
 end
 
-s = m:section(NamedSection, arg[1], "shunt_rules", "")
+local remarks_lookup = {}
+local groups = {}
+m:foreach("shunt_rules", function(s)
+	if s[".name"] ~= arg[1] then
+		if s.remarks then
+			remarks_lookup[s.remarks] = s[".name"]
+		end
+		if s.group and s.group ~= "" then
+			groups[s.group] = true
+		end
+	end
+end)
+
+s = m:section(NamedSection, arg[1], "shunt_rules", "Sing-Box/Xray " .. translate("Shunt Rule"))
 s.addremove = false
 s.dynamic = false
 
@@ -57,7 +68,32 @@ remarks.validate = function(self, value, section)
 	if value == "" then
 		return nil, translate("Remark cannot be empty.")
 	end
+	if remarks_lookup[value] then
+		return nil, translate("This remark already exists, please change a new remark.")
+	end
 	return value
+end
+
+o = s:option(Value, "group", translate("Shunt Rule Group"))
+o.default = ""
+o:value("", translate("default"))
+for k, v in pairs(groups) do
+	o:value(k)
+end
+o.write = function(self, section, value)
+	value = api.trim(value)
+	local lower = value:lower()
+
+	if lower == "" or lower == "default" then
+		return m:del(section, self.option)
+	end
+
+	for _, v in ipairs(self.keylist or {}) do
+		if v:lower() == lower then
+			return m:set(section, self.option, v)
+		end
+	end
+	m:set(section, self.option, value)
 end
 
 protocol = s:option(MultiValue, "protocol", translate("Protocol"))
@@ -129,28 +165,6 @@ source.validate = function(self, value, t)
 	return value
 end
 
-local dynamicList_write = function(self, section, value)
-	local t = {}
-	local t2 = {}
-	if type(value) == "table" then
-		local x
-		for _, x in ipairs(value) do
-			if x and #x > 0 then
-				if not t2[x] then
-					t2[x] = x
-					t[#t+1] = x
-				end
-			end
-		end
-	else
-		t = { value }
-	end
-	t = table.concat(t, " ")
-	return DynamicList.write(self, section, t)
-end
-
-source.write = dynamicList_write
-
 --[[
 -- Too low usage rate, hidden
 sourcePort = s:option(Value, "sourcePort", translate("Source port"))
@@ -177,8 +191,8 @@ domain_list.validate = function(self, value)
 			tmp_host = host:gsub("full:", "")
 		elseif host:find("geosite:") and host:find("geosite:") == 1 then
 			flag = 0
-		elseif host:find("ext:") and host:find("ext:") == 1 then
-			flag = 0
+--		elseif host:find("ext:") and host:find("ext:") == 1 then
+--			flag = 0
 		elseif host:find("rule-set:", 1, true) == 1 or host:find("rs:") == 1 then
 			local w = host:sub(host:find(":") + 1, #host)
 			if w:find("local:") == 1 or w:find("remote:") == 1 then
@@ -196,19 +210,19 @@ domain_list.validate = function(self, value)
 	return value
 end
 domain_list.description = "<br /><ul>"
-.. "<li>" .. translate("Plaintext: If this string matches any part of the targeting domain, this rule takes effet. Example: rule 'sina.com' matches targeting domain 'sina.com', 'sina.com.cn' and 'www.sina.com', but not 'sina.cn'.") .. "</li>"
-.. "<li>" .. translate("Regular expression: Begining with 'regexp:', the rest is a regular expression. When the regexp matches targeting domain, this rule takes effect. Example: rule 'regexp:\\.goo.*\\.com$' matches 'www.google.com' and 'fonts.googleapis.com', but not 'google.com'.") .. "</li>"
-.. "<li>" .. translate("Subdomain (recommended): Begining with 'domain:' and the rest is a domain. When the targeting domain is exactly the value, or is a subdomain of the value, this rule takes effect. Example: rule 'domain:v2ray.com' matches 'www.v2ray.com', 'v2ray.com', but not 'xv2ray.com'.") .. "</li>"
-.. "<li>" .. translate("Full domain: Begining with 'full:' and the rest is a domain. When the targeting domain is exactly the value, the rule takes effect. Example: rule 'domain:v2ray.com' matches 'v2ray.com', but not 'www.v2ray.com'.") .. "</li>"
-.. "<li>" .. translate("Pre-defined domain list: Begining with 'geosite:' and the rest is a name, such as geosite:google or geosite:cn.") .. "</li>"
+.. "<li>" .. translate("Plaintext: If this string matches any part of the targeting domain, this rule takes effect. Example: rule 'sina.com' matches targeting domain 'sina.com', 'sina.com.cn' and 'www.sina.com', but not 'sina.cn'.") .. "</li>"
+.. "<li>" .. translate("Regular expression: Beginning with 'regexp:', the rest is a regular expression. When the regexp matches targeting domain, this rule takes effect. Example: rule 'regexp:\\.goo.*\\.com$' matches 'www.google.com' and 'fonts.googleapis.com', but not 'google.com'.") .. "</li>"
+.. "<li>" .. translate("Subdomain (recommended): Beginning with 'domain:' and the rest is a domain. When the targeting domain is exactly the value, or is a subdomain of the value, this rule takes effect. Example: rule 'domain:v2ray.com' matches 'www.v2ray.com', 'v2ray.com', but not 'xv2ray.com'.") .. "</li>"
+.. "<li>" .. translate("Full domain: Beginning with 'full:' and the rest is a domain. When the targeting domain is exactly the value, the rule takes effect. Example: rule 'full:v2ray.com' matches 'v2ray.com', but not 'www.v2ray.com'.") .. "</li>"
+.. "<li>" .. translate("Pre-defined domain list: Beginning with 'geosite:' and the rest is a name, such as geosite:google or geosite:cn.") .. "</li>"
 .. "<li>"
-	.. translate("Sing-Box rule-set: Begining with 'rule-set:remote:' or 'rule-set:local:'")
+	.. translate("Sing-Box rule-set: Beginning with 'rule-set:remote:' or 'rule-set:local:'")
 	.. "<ul>"
 		.. "<li>" .. translate("Such as:") .. "'rule-set:remote:https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs'" .. "</li>"
 		.. "<li>" .. translate("Such as:") .. "'rule-set:local:/usr/share/sing-box/geosite-cn.srs'" .. "</li>"
 	.. "</ul>"
 .. "</li>"
-.. "<li>" .. translate("Annotation: Begining with #") .. "</li>"
+.. "<li>" .. translate("Annotation: Beginning with #") .. "</li>"
 .. "</ul>"
 ip_list = s:option(TextValue, "ip_list", "IP")
 ip_list.rows = 10
@@ -219,7 +233,7 @@ ip_list.validate = function(self, value)
 	string.gsub(value, "[^\r\n]+", function(w) table.insert(ipmasks, w) end)
 	for index, ipmask in ipairs(ipmasks) do
 		if ipmask:find("geoip:") and ipmask:find("geoip:") == 1 and not ipmask:find("%s") then
-		elseif ipmask:find("ext:") and ipmask:find("ext:") == 1 and not ipmask:find("%s") then
+--		elseif ipmask:find("ext:") and ipmask:find("ext:") == 1 and not ipmask:find("%s") then
 		elseif ipmask:find("rule-set:", 1, true) == 1 or ipmask:find("rs:") == 1 then
 			local w = ipmask:sub(ipmask:find(":") + 1, #ipmask)
 			if w:find("local:") == 1 or w:find("remote:") == 1 then
@@ -239,13 +253,13 @@ ip_list.description = "<br /><ul>"
 .. "<li>" .. translate("CIDR: such as '127.0.0.0/8'.") .. "</li>"
 .. "<li>" .. translate("GeoIP: such as 'geoip:cn'. It begins with geoip: (lower case) and followed by two letter of country code.") .. "</li>"
 .. "<li>"
-	.. translate("Sing-Box rule-set: Begining with 'rule-set:remote:' or 'rule-set:local:'")
+	.. translate("Sing-Box rule-set: Beginning with 'rule-set:remote:' or 'rule-set:local:'")
 	.. "<ul>"
 		.. "<li>" .. translate("Such as:") .. "'rule-set:remote:https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs'" .. "</li>"
 		.. "<li>" .. translate("Such as:") .. "'rule-set:local:/usr/share/sing-box/geoip-cn.srs'" .. "</li>"
 	.. "</ul>"
 .. "</li>"
-.. "<li>" .. translate("Annotation: Begining with #") .. "</li>"
+.. "<li>" .. translate("Annotation: Beginning with #") .. "</li>"
 .. "</ul>"
 
 o = s:option(Flag, "invert", "invert", translate("Invert match result.") .. " " .. translate("Only support Sing-Box."))

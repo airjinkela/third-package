@@ -1,6 +1,5 @@
 local api = require "luci.passwall2.api"
-local appname = "passwall2"
-local uci = api.uci
+local c_config = api.c_config
 local sys = api.sys
 local jsonc = api.jsonc
 local fs = api.fs
@@ -23,38 +22,38 @@ local function tinsert(table_name, val)
 end
 
 local function backup_servers()
-	local DNSMASQ_DNS = uci:get("dhcp", "@dnsmasq[0]", "server")
+	local DNSMASQ_DNS = api.uci_get("dhcp", "@dnsmasq[0]", "server")
 	if DNSMASQ_DNS and #DNSMASQ_DNS > 0 then
-		uci:set(appname, "@global[0]", "dnsmasq_servers", DNSMASQ_DNS)
-		api.uci_save(uci, appname, true)
+		api.uci_set_c("@global[0]", "dnsmasq_servers", DNSMASQ_DNS)
+		api.uci_save_c(true)
 	end
 end
 
 local function restore_servers()
 	local dns_table = {}
-	local DNSMASQ_DNS = uci:get("dhcp", "@dnsmasq[0]", "server")
+	local DNSMASQ_DNS = api.uci_get("dhcp", "@dnsmasq[0]", "server")
 	if DNSMASQ_DNS and #DNSMASQ_DNS > 0 then
 		for k, v in ipairs(DNSMASQ_DNS) do
 			tinsert(dns_table, v)
 		end
 	end
-	local OLD_SERVER = uci:get(appname, "@global[0]", "dnsmasq_servers")
+	local OLD_SERVER = api.uci_get_c("@global[0]", "dnsmasq_servers")
 	if OLD_SERVER and #OLD_SERVER > 0 then
 		for k, v in ipairs(OLD_SERVER) do
 			tinsert(dns_table, v)
 		end
-		uci:delete(appname, "@global[0]", "dnsmasq_servers")
-		api.uci_save(uci, appname, true)
+		api.uci_del_c("@global[0]", "dnsmasq_servers")
+		api.uci_save_c(true)
 	end
 	if dns_table and #dns_table > 0 then
-		uci:set_list("dhcp", "@dnsmasq[0]", "server", dns_table)
-		api.uci_save(uci, "dhcp", true)
+		api.uci_set("dhcp", "@dnsmasq[0]", "server", dns_table)
+		api.uci_save(nil, "dhcp", true)
 	end
 end
 
 function stretch()
-	local dnsmasq_server = uci:get("dhcp", "@dnsmasq[0]", "server")
-	local dnsmasq_noresolv = uci:get("dhcp", "@dnsmasq[0]", "noresolv")
+	local dnsmasq_server = api.uci_get("dhcp", "@dnsmasq[0]", "server")
+	local dnsmasq_noresolv = api.uci_get("dhcp", "@dnsmasq[0]", "noresolv")
 	local _flag
 	if dnsmasq_server and #dnsmasq_server > 0 then
 		for k, v in ipairs(dnsmasq_server) do
@@ -64,7 +63,7 @@ function stretch()
 		end
 	end
 	if not _flag and dnsmasq_noresolv == "1" then
-		uci:delete("dhcp", "@dnsmasq[0]", "noresolv")
+		api.uci_del("dhcp", "@dnsmasq[0]", "noresolv")
 		local RESOLVFILE = "/tmp/resolv.conf.d/resolv.conf.auto"
 		local file = io.open(RESOLVFILE, "r")
 		if not file then
@@ -76,8 +75,8 @@ function stretch()
 				RESOLVFILE = "/tmp/resolv.conf.auto"
 			end
 		end
-		uci:set("dhcp", "@dnsmasq[0]", "resolvfile", RESOLVFILE)
-		api.uci_save(uci, "dhcp", true)
+		api.uci_set("dhcp", "@dnsmasq[0]", "resolvfile", RESOLVFILE)
+		api.uci_save(nil, "dhcp", true)
 	end
 end
 
@@ -96,15 +95,15 @@ function logic_restart(var)
 		backup_servers()
 		--sys.call("sed -i '/list server/d' /etc/config/dhcp >/dev/null 2>&1")
 		local dns_table = {}
-		local dnsmasq_server = uci:get("dhcp", "@dnsmasq[0]", "server")
+		local dnsmasq_server = api.uci_get("dhcp", "@dnsmasq[0]", "server")
 		if dnsmasq_server and #dnsmasq_server > 0 then
 			for k, v in ipairs(dnsmasq_server) do
 				if v:find("/") then
 					tinsert(dns_table, v)
 				end
 			end
-			uci:set_list("dhcp", "@dnsmasq[0]", "server", dns_table)
-			api.uci_save(uci, "dhcp", true)
+			api.uci_set("dhcp", "@dnsmasq[0]", "server", dns_table)
+			api.uci_save(nil, "dhcp", true)
 		end
 		sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
 		restore_servers()
@@ -121,26 +120,44 @@ function copy_instance(var)
 	local TMP_DNSMASQ_PATH = var["TMP_DNSMASQ_PATH"]
 	local conf_lines = {}
 	local DEFAULT_DNSMASQ_CFGID = sys.exec("echo -n $(uci -q show dhcp.@dnsmasq[0] | awk 'NR==1 {split($0, conf, /[.=]/); print conf[2]}')")
-	for line in io.lines("/tmp/etc/dnsmasq.conf." .. DEFAULT_DNSMASQ_CFGID) do
-		local filter
-		if line:find("passwall2") then filter = true end
-		if line:find("ubus") then filter = true end
-		if line:find("dhcp") then filter = true end
-		if line:find("server=") == 1 then filter = true end
-		if line:find("port=") == 1 then filter = true end
-		if line:find("conf%-dir=") == 1 then
-			filter = true
-			if TMP_DNSMASQ_PATH then
-				local tmp_path = line:sub(1 + #"conf-dir=")
-				sys.call(string.format("cp -r %s/* %s/ 2>/dev/null", tmp_path, TMP_DNSMASQ_PATH))
+
+	local conf_file = "/var/etc/dnsmasq.conf." .. DEFAULT_DNSMASQ_CFGID
+
+	local retry = 5
+	while not fs.access(conf_file) and retry > 0 do
+		api.nixio.nanosleep(1, 0)
+		retry = retry - 1
+	end
+
+	if fs.access(conf_file) then
+		for line in io.lines(conf_file) do
+			local filter
+			if line:find("passwall2") then filter = true end
+			if line:find("ubus") then filter = true end
+			if line:find("dhcp") then filter = true end
+			if line:find("server=") == 1 then filter = true end
+			if line:find("port=") == 1 then filter = true end
+			if line:find("conf%-dir=") == 1 then
+				filter = true
+				if TMP_DNSMASQ_PATH then
+					local tmp_path = line:sub(1 + #"conf-dir=")
+					sys.call(string.format("cp -r %s/* %s/ 2>/dev/null", tmp_path, TMP_DNSMASQ_PATH))
+				end
+			end
+			if line:find("address=") == 1 or (line:find("server=") == 1 and line:find("/")) then filter = nil end
+			if not filter then
+				tinsert(conf_lines, line)
 			end
 		end
-		if line:find("address=") == 1 or (line:find("server=") == 1 and line:find("/")) then filter = nil end
-		if not filter then
-			tinsert(conf_lines, line)
-		end
+	else
+		sys.call("logger -t passwall2 'ERROR: dnsmasq config " .. conf_file .. " not found after 5s wait! DNS hijacking will fail.'")
 	end
+
 	tinsert(conf_lines, "port=" .. LISTEN_PORT)
+	--dhcp.leases to hostsMore actions
+	local hosts = api.CACHE_PATH .. "/dhcp-hosts"
+	sys.call("touch " .. hosts)
+	tinsert(conf_lines, "addn-hosts=" .. hosts)
 	if TMP_DNSMASQ_PATH then
 		sys.call("rm -rf " .. TMP_DNSMASQ_PATH .. "/*passwall2*")
 	end
@@ -160,7 +177,6 @@ function add_rule(var)
 	local FLAG = var["FLAG"]
 	local TMP_DNSMASQ_PATH = var["TMP_DNSMASQ_PATH"]
 	local DNSMASQ_CONF_FILE = var["DNSMASQ_CONF_FILE"]
-	local LISTEN_PORT = var["LISTEN_PORT"]
 	local DEFAULT_DNS = var["DEFAULT_DNS"]
 	local LOCAL_DNS = var["LOCAL_DNS"]
 	local TUN_DNS = var["TUN_DNS"]
@@ -243,7 +259,7 @@ function add_rule(var)
 	end
 
 	local cache_text = ""
-	local nodes_address_md5 = sys.exec("echo -n $(uci show passwall2 | grep '\\.address') | md5sum")
+	local nodes_address_md5 = sys.exec("echo -n $(uci show %s | grep '\\.address') | md5sum" % c_config):gsub("%s+$", "")
 	local new_text = TMP_DNSMASQ_PATH .. DNSMASQ_CONF_FILE .. DEFAULT_DNS .. LOCAL_DNS .. TUN_DNS .. nodes_address_md5 .. NFTFLAG
 	if fs.access(CACHE_TEXT_FILE) then
 		for line in io.lines(CACHE_TEXT_FILE) do
@@ -268,7 +284,7 @@ function add_rule(var)
 		-- Always use domestic DNS to resolve node domain names
 		if true then
 			fwd_dns = LOCAL_DNS
-			uci:foreach(appname, "nodes", function(t)
+			api.uci_foreach_c("nodes", function(t)
 				local function process_address(address)
 					address = (address or ""):lower()
 					if address == "engage.cloudflareclient.com" then return end
@@ -318,20 +334,6 @@ function add_rule(var)
 
 	if DNSMASQ_CONF_FILE ~= "nil" then
 		local conf_lines = {}
-		if LISTEN_PORT then
-			--Copy dnsmasq instance
-			conf_lines = copy_instance({
-				["LISTEN_PORT"] = LISTEN_PORT,
-				["TMP_DNSMASQ_PATH"] = TMP_DNSMASQ_PATH,
-				["return"] = "1"
-			})
-			--dhcp.leases to hostsMore actions
-			local hosts = "/tmp/etc/" .. appname .. "_tmp/dhcp-hosts"
-			sys.call("touch " .. hosts)
-			tinsert(conf_lines, "addn-hosts=" .. hosts)
-		else
-			--Modify the default dnsmasq service
-		end
 		tinsert(conf_lines, string.format("conf-dir=%s", TMP_DNSMASQ_PATH))
 		if dnsmasq_default_dns then
 			for s in string.gmatch(dnsmasq_default_dns, '[^' .. "," .. ']+') do
@@ -341,7 +343,7 @@ function add_rule(var)
 			tinsert(conf_lines, "no-poll")
 			tinsert(conf_lines, "no-resolv")
 
-			if FLAG == "default" then
+			if FLAG == "acl_default" then
 				api.set_cache_var("DEFAULT_DNS", DEFAULT_DNS)
 			end
 		end
@@ -367,6 +369,6 @@ if arg[1] then
 		if arg[2] then
 			var = jsonc.parse(arg[2])
 		end
-		func(var)
+		func(var or {})
 	end
 end

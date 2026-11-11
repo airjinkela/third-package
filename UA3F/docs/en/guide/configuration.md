@@ -83,6 +83,8 @@ user-agent-partial-replace: false
 
 Rule configuration is used only when `rewrite-mode: RULE` is enabled. YAML is better for maintained configs; CLI flags and environment variables accept JSON strings for automation.
 
+Rules are enabled by default in both YAML and JSON. Set `enabled: false` to disable a rule.
+
 ```yaml
 rewrite-mode: RULE
 
@@ -152,6 +154,7 @@ L3 rewrite adjusts network-layer characteristics such as TTL, IPID, TCP Timestam
 ```yaml
 l3-rewrite:
   ttl: true
+  ttl-value: 64
   ipid: true
   tcpts: true
   tcpwin: true
@@ -162,6 +165,7 @@ l3-rewrite:
 | Feature | Preferred YAML | Compatible YAML | CLI flag | Environment variable | Default |
 | --- | --- | --- | --- | --- | --- |
 | TTL rewrite | `l3-rewrite.ttl` | `ttl` | `--ttl`, `--l3-rewrite-ttl` | `UA3F_L3_REWRITE_TTL`, `UA3F_TTL` | `false` |
+| TTL target value | `l3-rewrite.ttl-value` | - | `--l3-rewrite-ttl-value` | `UA3F_L3_REWRITE_TTL_VALUE` | `64` |
 | IPID rewrite | `l3-rewrite.ipid` | `ipid` | `--ipid`, `--l3-rewrite-ipid` | `UA3F_L3_REWRITE_IPID`, `UA3F_IPID` | `false` |
 | Delete TCP Timestamp | `l3-rewrite.tcpts` | `tcp_timestamp` | `--tcpts`, `--l3-rewrite-tcpts` | `UA3F_L3_REWRITE_TCPTS`, `UA3F_TCPTS` | `false` |
 | TCP Initial Window rewrite | `l3-rewrite.tcpwin` | `tcp_initial_window` | `--tcpwin`, `--l3-rewrite-tcpwin` | `UA3F_L3_REWRITE_TCPWIN`, `UA3F_TCP_INIT_WINDOW` | `false` |
@@ -170,6 +174,8 @@ l3-rewrite:
 
 L3 eBPF acceleration requires Linux kernel `>= 5.15`. See [L3 Rewrite](/l3/overview.md) and [eBPF Acceleration](/ebpf/l3-rewrite.md).
 
+On the netfilter path with software flow offload enabled, forwarded packets on the offload path leave with TTL `254` when `ttl-value: 255` is configured. See [TTL rewrite limitations](/l3/ttl.md).
+
 ## Desync
 
 Desync enables TCP segment reordering and TCP obfuscation injection.
@@ -177,8 +183,8 @@ Desync enables TCP segment reordering and TCP obfuscation injection.
 ```yaml
 desync:
   reorder: false
-  reorder-bytes: 8
-  reorder-packets: 1500
+  reorder-bytes: 1500
+  reorder-packets: 8
   inject: false
   inject-ttl: 3
   desync-ports: ""
@@ -187,8 +193,8 @@ desync:
 | Feature | YAML | CLI flag | Environment variable | Default |
 | --- | --- | --- | --- | --- |
 | TCP segment reordering | `desync.reorder` | `--desync-reorder` | `UA3F_DESYNC_REORDER` | `false` |
-| Reordered segment bytes | `desync.reorder-bytes` | `--desync-reorder-bytes` | `UA3F_DESYNC_REORDER_BYTES` | `8` |
-| Reordered packet size | `desync.reorder-packets` | `--desync-reorder-packets` | `UA3F_DESYNC_REORDER_PACKETS` | `1500` |
+| Reordered segment bytes | `desync.reorder-bytes` | `--desync-reorder-bytes` | `UA3F_DESYNC_REORDER_BYTES` | `1500` |
+| Reordered packet size | `desync.reorder-packets` | `--desync-reorder-packets` | `UA3F_DESYNC_REORDER_PACKETS` | `8` |
 | TCP obfuscation injection | `desync.inject` | `--desync-inject` | `UA3F_DESYNC_INJECT` | `false` |
 | Injected packet TTL | `desync.inject-ttl` | `--desync-inject-ttl` | `UA3F_DESYNC_INJECT_TTL` | `3` |
 | Effective ports | `desync.desync-ports` | `--desync-ports` | `UA3F_DESYNC_PORTS` | empty |

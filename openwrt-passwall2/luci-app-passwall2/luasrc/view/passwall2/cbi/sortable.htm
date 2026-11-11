@@ -1,7 +1,8 @@
 <%
-local api = self.api
-local appname = self.appname or api.appname
-local target_cfgname = self.target_cfgname
+local map = self.map
+local sectiontype = self.sectiontype
+local api = map.api
+local appname = self.appname or map.config
 -%>
 <script src="<%=resource%>/view/<%=api.appname%>/Sortable.min.js"></script>
 <style>
@@ -35,9 +36,9 @@ local target_cfgname = self.target_cfgname
 		background-color: rgba(131, 191, 255, 0.7) !important;
 		box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 	}
-	
+
 	@media screen and (max-width: 1152px) {
-		#cbi-<%=appname%>-<%=target_cfgname%> .cbi-section-table-titles {
+		#cbi-<%=appname%>-<%=sectiontype%> .cbi-section-table-titles {
 			display: none !important;
 		}
 	}
@@ -47,7 +48,7 @@ local target_cfgname = self.target_cfgname
 	//Add drag-and-drop sorting
 	document.addEventListener("DOMContentLoaded", function () {
 		function initSortableForTable() {
-			var section = document.getElementById("cbi-<%=appname%>-<%=target_cfgname%>");
+			var section = document.getElementById("cbi-<%=appname%>-<%=sectiontype%>");
 			if (!section) return;
 
 			// === insert drag handle ===
@@ -115,7 +116,7 @@ local target_cfgname = self.target_cfgname
 				hiddenInput.value = changed ? newOrder.join(" ") : "";
 			}
 		}
-		
+
 		// hide lua luci version up/down
 		function hideSortColumn(section) {
 			var table = section.getElementsByTagName("table")[0];

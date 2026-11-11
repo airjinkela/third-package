@@ -1,24 +1,51 @@
 #!/usr/bin/lua
 
 local api = require "luci.passwall2.api"
-local name = api.appname
 local fs = api.fs
 local log = api.log
 local sys = api.sys
-local uci = api.uci
-local jsonc = api.jsonc
+local uci, uci_get, uci_set, uci_del, uci_foreach, uci_save = api.uci, api.uci_get_c, api.uci_set_c, api.uci_del_c, api.uci_foreach_c, api.uci_save_c
 
 local arg1 = arg[1]
 local arg2 = arg[2]
 local arg3 = arg[3]
 
+local update_lock = api.nixio.open(api.LOCK_PREFIX .. "_sub_rule.lock", api.nixio.open_flags("rdwr", "creat"))
+if not update_lock then
+	log(0, api.i18n.translate("Unable to open the subscription/rule update lock. Exiting."))
+	os.exit(1)
+end
+
+if not update_lock:lock("tlock") then
+	if arg3 ~= "cron" then
+		log(0, api.i18n.translate("A subscription or rule update is already running. Skipping this request."))
+		update_lock:close()
+		os.exit(0)
+	end
+	local running_task = update_lock:read(1)
+	update_lock:seek(0, "set")
+	local running_name = running_task == "s" and api.i18n.translate("Subscription")
+		or running_task == "r" and api.i18n.translate("Rule Update")
+		or api.i18n.translate("Subscription/Rule Update")
+	log(0, api.i18n.translatef("[%s] is running; [%s] is queued and waiting...", running_name, api.i18n.translate("Rule Update")))
+	if not update_lock:lock("lock") then
+		log(0, api.i18n.translate("Unable to acquire the update lock. Scheduled task failed."))
+		update_lock:close()
+		os.exit(1)
+	end
+end
+update_lock:write("r")
+update_lock:seek(0, "set")
+uci:revert(api.c_config)
+math.randomseed(os.time() + math.floor(os.clock() * 1000))
+
 local reboot = 0
 local geoip_update = "0"
 local geosite_update = "0"
 
-local geoip_url = uci:get(name, "@global_rules[0]", "geoip_url") or "https://github.com/Loyalsoldier/geoip/releases/latest/download/geoip.dat"
-local geosite_url = uci:get(name, "@global_rules[0]", "geosite_url") or "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
-local asset_location = uci:get(name, "@global_rules[0]", "v2ray_location_asset") or "/usr/share/v2ray/"
+local geoip_url = uci_get("@global_rules[0]", "geoip_url") or "https://github.com/Loyalsoldier/geoip/releases/latest/download/geoip.dat"
+local geosite_url = uci_get("@global_rules[0]", "geosite_url") or "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
+local asset_location = uci_get("@global_rules[0]", "v2ray_location_asset") or "/usr/share/v2ray/"
 asset_location = asset_location:match("/$") and asset_location or (asset_location .. "/")
 local backup_path = "/tmp/bak_v2ray/"
 
@@ -36,6 +63,7 @@ local function curl(url, file)
 		"--connect-timeout 3",
 		"--max-time 300",
 		"--speed-limit 51200 --speed-time 15",
+		"-H 'Accept: */*'",
 		'-A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"',
 		"--dump-header -",
 		"-w '\\n%{http_code}'"
@@ -81,38 +109,124 @@ local function non_file_check(file_path, header_content)
 	return false
 end
 
+-- Check every Geo category boundary and sample its first rule to identify the format.
+local function validate_geo_file(file_path, geo_type)
+	if geo_type ~= "geoip" and geo_type ~= "geosite" then return false end
+	local file = io.open(file_path, "rb")
+	if not file then return false end
+	local size = file:seek("end")
+	if not size or size == 0 or not file:seek("set", 0) then file:close(); return false end
+	local pos, rules = 0, 0
+	-- Use the file's read buffer and seek past skipped content without an extra buffer.
+	local function skip(length, limit)
+		assert(length <= limit - pos)
+		pos = pos + length
+		assert(file:seek("set", pos))
+	end
+	-- Without a numeric limit, only validate and skip varints to avoid precision loss for 64-bit attributes.
+	local function varint(limit, maximum)
+		local value, factor = 0, 1
+		for i = 1, 10 do
+			assert(pos < limit)
+			local byte = assert(file:read(1)):byte()
+			pos = pos + 1
+			assert(i < 10 or byte <= 1)
+			if maximum then
+				local digit = byte % 128
+				assert(digit <= math.floor((maximum - value) / factor))
+				value = value + digit * factor
+			end
+			if byte < 128 then return value end
+			factor = factor * 128
+		end
+		error(false)
+	end
+	-- Field definitions: wire type, optional child message type, optional numeric limit.
+	local schema = {
+		list = {{2, geo_type}},
+		geoip = {{2}, {2, "cidr"}, {0}},
+		geosite = {{2}, {2, "domain"}},
+		cidr = {{2}, {0, nil, 4294967295}},
+		domain = {{0, nil, 3}, {2}, {2, "attribute"}},
+		attribute = {{2}, {0}, {0}}
+	}
+	local parse
+	parse = function(kind, limit)
+		local values, entries = {}, 0
+		local is_entry = kind == "geoip" or kind == "geosite"
+		while pos < limit do
+			if is_entry and values[1] and values[1] > 0 and entries > 0 then
+				skip(limit - pos, limit)
+				return
+			end
+			local tag = varint(limit, 4294967295)
+			local field, wire = math.floor(tag / 8), tag % 8
+			local spec = schema[kind][field]
+			assert(field > 0 and (not spec or wire == spec[1]))
+			local value
+			if wire == 0 then
+				value = varint(limit, spec and spec[3])
+			elseif wire == 2 then
+				value = varint(limit, limit - pos)
+				assert(value <= limit - pos)
+				if spec and spec[2] and not (is_entry and entries > 0) then
+					parse(spec[2], pos + value)
+				else
+					skip(value, limit)
+				end
+				if spec and spec[2] then entries = entries + 1 end
+			elseif wire == 1 or wire == 5 then
+				skip(wire == 1 and 8 or 4, limit)
+			else
+				-- Geo files do not use Protobuf group fields.
+				error(false)
+			end
+			if spec then values[field] = value end
+		end
+		if kind == "list" then
+			assert(entries > 0 and rules > 0)
+		elseif kind == "geoip" or kind == "geosite" or kind == "attribute" then
+			assert(values[1] and values[1] > 0)
+		elseif kind == "cidr" then
+			assert(values[1] == 4 or values[1] == 16)
+			assert((values[2] or 0) <= (values[1] == 4 and 32 or 128))
+			rules = rules + 1
+		elseif kind == "domain" then
+			assert(values[2] and values[2] > 0)
+			rules = rules + 1
+		end
+	end
+	local valid = pcall(parse, "list", size)
+	file:close()
+	return valid
+end
+
 local function fetch_geofile(geo_name, geo_type, url)
 	local tmp_path = "/tmp/" .. geo_name
 	local asset_path = asset_location .. geo_name
 	local down_filename = url:match("^.*/([^/?#]+)")
-	local sha_url = url:gsub(down_filename, down_filename .. ".sha256sum")
+	local sha_url = url:gsub((down_filename:gsub("(%W)", "%%%1")), down_filename .. ".sha256sum")
 	local sha_path = tmp_path .. ".sha256sum"
 
-	local function verify_sha256(sha_file)
-		return sys.call("sha256sum -c " .. sha_file .. " > /dev/null 2>&1") == 0
-	end
-
+	local digest
 	local sha_verify, _ = curl(sha_url, sha_path) == 200
 	if sha_verify then
 		local f = io.open(sha_path, "r")
 		if f then
 			local content = f:read("*l")
 			f:close()
-			if content then
-				content = content:gsub("(%x+)%s+.+", "%1  " .. tmp_path)
-				f = io.open(sha_path, "w")
-				if f then
-					f:write(content)
-					f:close()
-				end
+			local hash = content and content:match("^(%x+)%s")
+			if hash and #hash == 64 then
+				digest = "sha256:" .. hash
 			end
 		end
-		if fs.access(asset_path) then
-			sys.call(string.format("cp -f %s %s", asset_path, tmp_path))
-			if verify_sha256(sha_path) then
-				log(1, api.i18n.translatef("%s version is the same and does not need to be updated.", geo_type))
-				return 0
-			end
+		if not digest then
+			log(1, api.i18n.translatef("%s SHA256 verification information is invalid. Update failed.", geo_type))
+			return 1
+		end
+		if fs.access(asset_path) and api.verify_sha256(asset_path, digest) then
+			log(1, api.i18n.translatef("%s version is the same and does not need to be updated.", geo_type))
+			return 0
 		end
 	end
 
@@ -128,16 +242,20 @@ local function fetch_geofile(geo_name, geo_type, url)
 	end
 	if sret_tmp == 200 then
 		if sha_verify then
-			if verify_sha256(sha_path) then
+			if api.verify_sha256(tmp_path, digest) then
 				sys.call(string.format("mkdir -p %s && mv -f %s %s", backup_path, asset_path, backup_path))
 				sys.call(string.format("mkdir -p %s && mv -f %s %s", asset_location, tmp_path, asset_path))
 				reboot = 1
 				log(1, api.i18n.translatef("%s update success.", geo_type))
 			else
-				log(1, api.i18n.translatef("%s update failed, please try again later.", geo_type))
+				log(1, api.i18n.translatef("%s update failed, please try again later or change URL.", geo_type))
 				return 1
 			end
 		else
+			if not validate_geo_file(tmp_path, geo_type) then
+				log(1, api.i18n.translatef("%s file format verification failed. Update failed.", geo_type))
+				return 1
+			end
 			if fs.access(asset_path) and sys.call(string.format("cmp -s %s %s", tmp_path, asset_path)) == 0 then
 				log(1, api.i18n.translatef("%s version is the same and does not need to be updated.", geo_type))
 				return 0
@@ -148,7 +266,7 @@ local function fetch_geofile(geo_name, geo_type, url)
 			log(1, api.i18n.translatef("%s update success.", geo_type))
 		end
 	else
-		log(1, api.i18n.translatef("%s update failed, please try again later.", geo_type))
+		log(1, api.i18n.translatef("%s update failed, please try again later or change URL.", geo_type))
 		return 1
 	end
 	return 0
@@ -177,40 +295,13 @@ if arg2 then
 		end
 	end)
 else
-	geoip_update = uci:get(name, "@global_rules[0]", "geoip_update") or "1"
-	geosite_update = uci:get(name, "@global_rules[0]", "geosite_update") or "1"
+	geoip_update = uci_get("@global_rules[0]", "geoip_update") or "1"
+	geosite_update = uci_get("@global_rules[0]", "geosite_update") or "1"
 end
 if geoip_update == "0" and geosite_update == "0" then
-	os.exit(0)
+	update_lock:close()
+	return
 end
-
-local function check_instance(action)
-	local rule_lock = "/var/lock/" .. name .. "_rule_update.lock"
-	local sub_lock = "/var/lock/" .. name .. "_subscribe.lock"
-
-	if action == "start" then
-		math.randomseed(os.time() + math.floor(os.clock() * 1000))
-		api.nixio.nanosleep(0, math.random(100, 1000) * 1000000)
-		if fs.access(rule_lock) then
-			log(0, api.i18n.translatef("[Rule update] instance is running; please try again later.") .. "\n")
-			os.exit(0)
-		else
-			luci.sys.call("touch " .. rule_lock)
-		end
-	elseif action == "end" then
-		luci.sys.call("rm -f " .. rule_lock)
-		return
-	end
-
-	if fs.access(sub_lock) then
-		log(0, api.i18n.translatef("[Subscription] instance is running; [Rule Update] queue and wait.") .. "\n")
-	end
-	while fs.access(sub_lock) do
-		api.nixio.nanosleep(2, 0)
-	end
-end
-
-check_instance("start")
 
 log(0, api.i18n.translate("Start updating the rules..."))
 local function safe_call(func, err_msg)
@@ -233,21 +324,18 @@ if geosite_update == "1" then
 	remove_tmp_geofile("geosite")
 end
 
-uci:set(name, "@global_rules[0]", "geoip_update", geoip_update)
-uci:set(name, "@global_rules[0]", "geosite_update", geosite_update)
-api.uci_save(uci, name, true)
+uci_set("@global_rules[0]", "geoip_update", geoip_update)
+uci_set("@global_rules[0]", "geosite_update", geosite_update)
 
 if reboot == 1 then
-	if arg3 == "cron" then
-		if not fs.access("/var/lock/" .. name .. ".lock") then
-			sys.call("touch /tmp/lock/" .. name .. "_cron.lock")
-		end
-	end
-
 	log(1, api.i18n.translate("Restart the service and apply the new rules."))
-	uci:set(name, "@global[0]", "flush_set", "1")
-	api.uci_save(uci, name, true, true)
+	uci_set("@global[0]", "flush_set", "1")
 end
+uci_save(true)
 log(0, api.i18n.translate("The rules have been updated..."))
 
-check_instance("end")
+update_lock:close()
+if reboot == 1 then
+	local action = arg3 == "cron" and " cron" or ""
+	sys.call("/etc/init.d/passwall2 restart" .. action .. " > /dev/null 2>&1 &")
+end

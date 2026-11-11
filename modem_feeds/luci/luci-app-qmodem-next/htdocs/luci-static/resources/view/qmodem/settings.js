@@ -117,6 +117,13 @@ return view.extend({
 		o = s.option(form.Flag, 'enable_usb_scan', _('Enable USB Scan'));
 		o.description = _('Once enabled, the USB ports will be scanned on every boot.');
 		o.default = '1';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'scan_delay', _('Boot Scan Delay'));
+		o.description = _('Delay automatic USB and PCIe scans after the scanner is ready, in seconds.');
+		o.datatype = 'and(uinteger,min(0),max(300))';
+		o.default = '0';
+		o.placeholder = '0';
 
 		o = s.option(form.ListValue, 'scan_log_level', _('Scan Log Level'));
 		o.value('debug', _('Debug'));
@@ -290,6 +297,7 @@ return view.extend({
 							// Set type and path automatically
 							uci.set('qmodem', sid, 'data_interface', deviceInfo.type);
 							uci.set('qmodem', sid, 'path', deviceInfo.path);
+							uci.set('qmodem', sid, 'use_ubus', '1');
 							
 							ui.hideModal();
 							m.save().then(function() {
@@ -365,12 +373,13 @@ return view.extend({
 			o.value(port.id, port.label);
 		});
 	}		o = s.option(form.Flag, 'use_ubus', _('Use Ubus AT Daemon'));
-		o.default = '0';
+		o.default = '1';
+		o.rmempty = false;
 
 
 		// Additional modem configuration (modal only)
 		//vendor
-		o = s.option(form.ListValue, 'vendor', _('Vendor'));
+		o = s.option(form.ListValue, 'manufacturer', _('Manufacturer'));
 		o.modalonly = true;
 		o.optional = true;
 		for (var key in modemCfg.manufacturers) {

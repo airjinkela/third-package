@@ -8,6 +8,35 @@
 'require ui';
 'require validation';
 
+document.querySelector('head').appendChild(E('script', {
+	src: L.resource('fchomo/md5.js')
+}));
+
+function funcSed(originFunc, matrix = [], closure = []) {
+	if (isEmpty(matrix))
+		return originFunc;
+
+	const oriFuncStr = originFunc.toString();
+	let funcStr = oriFuncStr;
+
+	for (const [regexp, replacer] of matrix) {
+		if (!regexp)
+			continue;
+		if (regexp.test(funcStr))
+			funcStr = funcStr.replace(regexp, replacer || '');
+		else
+			throw new Error(`funcSed: No matching items found: ${regexp}`);
+	}
+
+	if (isEmpty(funcStr) || funcStr === oriFuncStr)
+		return originFunc;
+
+	const funcArgs = funcStr.substring(funcStr.indexOf('(') +1, funcStr.indexOf(')')).split(',');
+	const funcBody = funcStr.substring(funcStr.indexOf('{') +1, funcStr.lastIndexOf('}'));
+
+	return new Function(...closure, ...funcArgs, funcBody);
+}
+
 /* Member */
 const rulesetdoc = [
 	'data:text/html;base64,',
@@ -54,6 +83,14 @@ const congestion_controller = [
 	['cubic', _('cubic')],
 	['new_reno', _('new_reno')],
 	['bbr', _('bbr')],
+];
+
+const ipstack_congestion_controller = [
+	['', _('Keep default')],
+	['cubic', _('cubic')],
+	['reno', _('reno')],
+	['bbr', _('bbr')],
+	['bbr3', _('bbr3')],
 ];
 
 const bbr_profiles = [
@@ -204,8 +241,11 @@ const outbound_type = [
 	['hysteria2', _('Hysteria2') + ' - ' + _('UDP')],
 	['shadowquic', _('ShadowQUIC') + ' - ' + _('UDP')],
 	['trusttunnel', _('TrustTunnel') + ' - ' + _('TCP/UDP')],
-	['wireguard', _('WireGuard') + ' - ' + _('UDP')],
-	['masque', _('Masque') + ' - ' + _('UDP')], // https://blog.cloudflare.com/post-quantum-warp/
+	['zerotier', _('ZeroTier') + ' - ' + _('UDP') + ' - ' + _('L2')], // Endpoint
+	['wireguard', _('WireGuard') + ' - ' + _('UDP') + ' - ' + _('L3')], // Endpoint
+	['tailscale', _('Tailscale') + ' - ' + _('UDP') + ' - ' + _('L3')], // Endpoint
+	['masque', _('Masque') + ' - ' + _('UDP') + ' - ' + _('L3')], // Endpoint // https://blog.cloudflare.com/post-quantum-warp/
+	['easytier', _('EasyTier') + ' - ' + _('TCP/UDP') + ' - ' + _('L3')], // Endpoint
 	['ssh', _('SSH') + ' - ' + _('TCP')]
 ];
 
@@ -228,7 +268,7 @@ const preset_outbound = {
 		['COMPATIBLE']
 	],
 	direct: [
-		['', _('null')],
+		['', _('none')],
 		['DIRECT'],
 		['GLOBAL']
 	],
@@ -259,47 +299,79 @@ const routing_port_type = [
 ];
 
 const rules_type = [
-	['DOMAIN'],
-	['DOMAIN-SUFFIX'],
-	['DOMAIN-KEYWORD'],
-	['DOMAIN-WILDCARD'],
-	['DOMAIN-REGEX'],
-	['GEOSITE'],
-
-	['IP-CIDR'],
-	['IP-CIDR6'],
-	['IP-SUFFIX'],
-	['IP-ASN'],
-	['GEOIP'],
-
-	['SRC-GEOIP'],
-	['SRC-IP-ASN'],
-	['SRC-IP-CIDR'],
-	['SRC-IP-SUFFIX'],
-
-	['DST-PORT'],
-	['SRC-PORT'],
-
-	//['IN-PORT'],
-	//['IN-TYPE'],
-	//['IN-USER'],
-	//['IN-NAME'],
-	['REMATCH-NAME'],
-
-	['PROCESS-PATH'],
-	['PROCESS-PATH-REGEX'],
-	['PROCESS-PATH-WILDCARD'],
-	['PROCESS-NAME'],
-	['PROCESS-NAME-REGEX'],
-	['PROCESS-NAME-WILDCARD'],
-	['UID'],
-
-	['NETWORK'],
-	['DSCP'],
-
-	['RULE-SET'],
-
-	['MATCH']
+	{
+		label: _('Domain'),
+		types: [
+			['DOMAIN'],
+			['DOMAIN-SUFFIX'],
+			['DOMAIN-KEYWORD'],
+			['DOMAIN-WILDCARD'],
+			['DOMAIN-REGEX'],
+			['GEOSITE']
+		]
+	},
+	{
+		label: _('Dst-IP'),
+		types: [
+			['IP-CIDR'],
+			['IP-CIDR6'],
+			['IP-SUFFIX'],
+			['IP-ASN'],
+			['GEOIP']
+		]
+	},
+	{
+		label: _('Src-IP'),
+		types: [
+			['SRC-GEOIP'],
+			['SRC-IP-ASN'],
+			['SRC-IP-CIDR'],
+			['SRC-IP-SUFFIX']
+		]
+	},
+	{
+		label: _('Port'),
+		types: [
+			['DST-PORT'],
+			['SRC-PORT']
+		]
+	},
+	{
+		label: _('Inbound'),
+		types: [
+			['IN-PORT'],
+			['IN-TYPE'],
+			//['IN-USER'],
+			['IN-NAME'],
+			['REMATCH-NAME']
+		]
+	},
+	{
+		label: _('Process'),
+		types: [
+			['PROCESS-PATH'],
+			['PROCESS-PATH-REGEX'],
+			['PROCESS-PATH-WILDCARD'],
+			['PROCESS-NAME'],
+			['PROCESS-NAME-REGEX'],
+			['PROCESS-NAME-WILDCARD'],
+			['UID']
+		]
+	},
+	{
+		label: _('Network'),
+		types: [
+			['NETWORK'],
+			['DSCP']
+		]
+	},
+	{
+		label: _('Other'),
+		types: [
+			['RULE-SET'],
+			['MATCH']
+		]
+	}
 ];
 
 const rules_type_allowparms = [
@@ -313,12 +385,15 @@ const rules_type_allowparms = [
 	'RULE-SET',
 ];
 
-const rules_logical_type = [
-	['AND'],
-	['OR'],
-	['NOT'],
-	//['SUB-RULE'],
-];
+const rules_logical_type = {
+	label: _('Logical'),
+	types: [
+		['AND'],
+		['OR'],
+		['NOT'],
+		//['SUB-RULE']
+	]
+};
 
 const rules_logical_payload_count = {
 	'AND': { low: 2, high: undefined },
@@ -474,6 +549,16 @@ const CBIGridSection = form.GridSection.extend({
 	}
 });
 
+const CBIListValue = form.ListValue.extend({
+	renderWidget(/* ... */) {
+		let frameEl = form.ListValue.prototype.renderWidget.apply(this, arguments);
+
+		frameEl.querySelector('select').style["min-width"] = '10em';
+
+		return frameEl;
+	}
+});
+
 const CBIDynamicList = form.DynamicList.extend({ // @less_25_12
 	__name__: 'CBI.DynamicList',
 
@@ -497,31 +582,6 @@ const CBIDynamicList = form.DynamicList.extend({ // @less_25_12
 	}
 });
 
-const CBIMultiValue = form.MultiValue.extend({ // @pr8758_merged
-	__name__: 'CBI.MultiValue',
-
-	renderWidget(section_id, option_index, cfgvalue) {
-		const value = (cfgvalue != null) ? cfgvalue : this.default;
-		const choices = this.transformChoices();
-
-		const widget = new UIDropdown(L.toArray(value), choices, {
-			id: this.cbid(section_id),
-			sort: this.keylist,
-			multiple: true,
-			keep_order: this.keep_order,
-			optional: this.optional || this.rmempty,
-			select_placeholder: this.placeholder,
-			create: this.create,
-			display_items: this.display_size ?? this.size ?? 3,
-			dropdown_items: this.dropdown_size ?? this.size ?? -1,
-			validate: this.getValidator(section_id),
-			disabled: (this.readonly != null) ? this.readonly : this.map.readonly
-		});
-
-		return widget.render();
-	}
-});
-
 const CBIStaticList = form.DynamicList.extend({
 	__name__: 'CBI.StaticList',
 
@@ -534,13 +594,94 @@ const CBIStaticList = form.DynamicList.extend({
 	}
 });
 
-const CBIListValue = form.ListValue.extend({
-	renderWidget(/* ... */) {
-		let frameEl = form.ListValue.prototype.renderWidget.apply(this, arguments);
+const CBIMultiValue = form.MultiValue.extend({ // @pr8758_merged
+	__name__: 'CBI.MultiValue',
 
-		frameEl.querySelector('select').style["min-width"] = '10em';
+	renderWidget(/* ... */) {
+		const sb = funcSed(
+			form.MultiValue.prototype.renderWidget,
+			[
+				[new RegExp(/(widget\s*=\s*new)\s*ui\.Dropdown/), '$1 UIDropdown'],
+				[new RegExp(/(multiple:\s*true)/), 'keep_order: this.keep_order, $1']
+			],
+			['UIDropdown']
+		).call(this, UIDropdown, ...arguments);
+
+		return sb;
+	}
+});
+
+const CBIGroupListValue = CBIListValue.extend({
+	__name__: 'CBI.GroupListValue',
+
+	renderWidget(section_id, option_index, cfgvalue) {
+		const frameEl = CBIListValue.prototype.renderWidget.apply(this, arguments);
+		const select = frameEl.querySelector('select');
+		const options = Array.from(select.options);
+
+		Object.keys(this.grplist).forEach((label) => {
+			const groupEl = E('optgroup', {label: label}, []);
+			for (const option of options)
+				if (this.grplist[label].includes(option.value))
+					groupEl.appendChild(option);
+			select.appendChild(groupEl);
+		});
+
+		select.value = (cfgvalue != null) ? cfgvalue : this.default;
+		return frameEl;
+	},
+
+	value(key, val) {
+		this.keylist ??= [];
+		this.vallist ??= [];
+		this.grplist ??= {};
+
+		if (Array.isArray(key)) {
+			this.grplist[val] ??= [];
+			this.grplist[val].push(key[0]);
+			this.super('value', ...key);
+		} else
+			this.super('value', key, val);
+	}
+});
+
+const CBIGroupDynamicList = (less_25_12 ? CBIDynamicList : form.DynamicList).extend({ // @less_25_12
+	__name__: 'CBI.GroupDynamicList',
+
+	renderWidget(section_id, option_index, cfgvalue) {
+		const frameEl = (less_25_12 ? CBIDynamicList : form.DynamicList).prototype.renderWidget.apply(this, arguments); // @less_25_12
+		const select = frameEl.querySelector('ul');
+		const optLis = Array.from(select.querySelectorAll('li'));
+
+		Object.keys(this.grplist).forEach((label) => {
+			const groupLi = E('li', {
+				class: "group-title",
+				style: "font-weight: bold; pointer-events: none;"
+			}, [label]);
+			for (const optLi of optLis)
+				if (this.grplist[label].includes(optLi.getAttribute('data-value'))) {
+					optLi.classList.add('group-item');
+					optLi.style.paddingLeft = '20px';
+				}
+			const firstLi = select.querySelector(`li[data-value="${this.grplist[label][0]}"]`);
+			select.insertBefore(groupLi, firstLi);
+		});
 
 		return frameEl;
+	},
+
+	value: CBIGroupListValue.prototype.value
+});
+
+const CBIGroupStaticList = CBIGroupDynamicList.extend({
+	__name__: 'CBI.GroupStaticList',
+
+	renderWidget(/* ... */) {
+		let El = CBIGroupDynamicList.prototype.renderWidget.apply(this, arguments);
+
+		El.querySelector('.add-item ul > li[data-value="-"]')?.remove();
+
+		return El;
 	}
 });
 
@@ -569,17 +710,18 @@ const CBITextValue = form.TextValue.extend({
 const CBIGenValue = form.Value.extend({
 	__name__: 'CBI.GenValue',
 
-	renderWidget(/* ... */) {
+	renderWidget(section_id, option_index, cfgvalue) {
 		let node = form.Value.prototype.renderWidget.apply(this, arguments);
 
 		if (!this.password)
 			node.classList.add('control-group');
 
-		(node.querySelector('.control-group') || node).appendChild(E('button', {
-			class: 'cbi-button cbi-button-add',
-			title: _('Generate'),
-			click: ui.createHandlerFn(this, handleGenKey, this.hm_options || this.option)
-		}, [ _('Generate') ]));
+		if (this.section.section) // modalonly
+			(node.querySelector('.control-group') || node).appendChild(E('button', {
+				class: 'cbi-button cbi-button-add',
+				title: _('Generate'),
+				click: ui.createHandlerFn(this, handleGenKey, section_id, this.hm_options || this.option)
+			}, [ _('Generate') ]));
 
 		return node;
 	}
@@ -588,14 +730,15 @@ const CBIGenValue = form.Value.extend({
 const CBIGenText = CBITextValue.extend({
 	__name__: 'CBI.GenText',
 
-	renderWidget(/* ... */) {
+	renderWidget(section_id, option_index, cfgvalue) {
 		let node = CBITextValue.prototype.renderWidget.apply(this, arguments);
 
-		node.appendChild(E('button', {
-			class: 'cbi-button cbi-button-add',
-			title: _('Generate'),
-			click: ui.createHandlerFn(this, handleGenKey, this.hm_options || this.option)
-		}, [ _('Generate') ]));
+		if (this.section.section) // modalonly
+			(node.querySelector('.control-group') || node).appendChild(E('button', {
+				class: 'cbi-button cbi-button-add',
+				title: _('Generate'),
+				click: ui.createHandlerFn(this, handleGenKey, section_id, this.hm_options || this.option)
+			}, [ _('Generate') ]));
 
 		return node;
 	}
@@ -607,28 +750,29 @@ const CBICopyValue = form.Value.extend({
 	readonly: true,
 
 	renderWidget(section_id, option_index, cfgvalue) {
-		let node = form.Value.prototype.renderWidget.call(this, section_id, option_index, cfgvalue);
+		let node = form.Value.prototype.renderWidget.apply(this, arguments);
 
 		node.classList.add('control-group');
 
-		node.appendChild(E('button', {
-			class: 'cbi-button cbi-button-add',
-			click: ui.createHandlerFn(this, async (section_id) => {
-				try {
-					await navigator.clipboard.writeText(this.formvalue(section_id));
-					console.log('Content copied to clipboard!');
-				} catch (e) {
-					console.error('Failed to copy: ', e);
-				}
-				/* Deprecated
-				let inputEl = document.getElementById(this.cbid(section_id)).querySelector('input');
-				inputEl.select();
-				document.execCommand("copy");
-				inputEl.blur();
-				*/
-				return alert(_('Content copied to clipboard!'));
-			}, section_id)
-		}, [ _('Copy') ]));
+		if (this.section.section) // modalonly
+			node.appendChild(E('button', {
+				class: 'cbi-button cbi-button-add',
+				click: ui.createHandlerFn(this, async (section_id) => {
+					try {
+						await navigator.clipboard.writeText(this.formvalue(section_id));
+						console.log('Content copied to clipboard!');
+					} catch (e) {
+						console.error('Failed to copy: ', e);
+					}
+					/* Deprecated
+					let inputEl = document.getElementById(this.cbid(section_id)).querySelector('input');
+					inputEl.select();
+					document.execCommand("copy");
+					inputEl.blur();
+					*/
+					return alert(_('Content copied to clipboard!'));
+				}, section_id)
+			}, [ _('Copy') ]));
 
 		return node;
 	}
@@ -771,7 +915,7 @@ const CBIHandleImport = baseclass.extend(/** @lends hm.HandleImport.prototype */
 		return uci.save()
 			.then(L.bind(this.map.load, this.map))
 			.then(L.bind(this.map.reset, this.map))
-			.then(L.ui.hideModal)
+			.then(ui.hideModal)
 			.catch(() => {});
 	},
 
@@ -816,431 +960,94 @@ const UIDynamicList = ui.DynamicList.extend({ // @less_25_12
 // keep selected order for multiple selection
 const UIDropdown = ui.Dropdown.extend({ // @pr8758_merged
 	__init__(value, choices, options) {
-		if (typeof(choices) != 'object')
-			choices = {};
-
-		if (!Array.isArray(value))
-			this.values = (value != null && value != '') ? [ value ] : [];
-		else
-			this.values = value;
+		const result = ui.Dropdown.prototype.__init__.apply(this, arguments);
 
 		this.orderCounter = this.values.length;
-		this.choices = choices;
-		this.options = Object.assign({
-			sort:               true,
-			multiple:           Array.isArray(value),
-			keep_order:         false,
-			optional:           true,
-			select_placeholder: _('-- Please choose --'),
-			custom_placeholder: _('-- custom --'),
-			display_items:      3,
-			dropdown_items:     -1,
-			create:             false,
-			create_query:       '.create-item-input',
-			create_template:    'script[type="item-template"]'
-		}, options);
+		this.options.keep_order = options?.keep_order ?? false;
+
+		return result;
 	},
 
-	render() {
-		const sb = E('div', {
-			'id': this.options.id,
-			'class': 'cbi-dropdown',
-			'multiple': this.options.multiple ? '' : null,
-			'keep_order': this.options.keep_order ? '' : null,
-			'optional': this.options.optional ? '' : null,
-			'disabled': this.options.disabled ? '' : null,
-			'tabindex': -1
-		}, E('ul'));
-
-		let keys = Object.keys(this.choices);
-
-		if (this.options.sort === true)
-			keys.sort(L.naturalCompare);
-		else if (Array.isArray(this.options.sort))
-			keys = this.options.sort;
-
-		if (this.options.create)
-			for (let i = 0; i < this.values.length; i++)
-				if (!this.choices.hasOwnProperty(this.values[i]))
-					keys.push(this.values[i]);
-
-		for (let i = 0; i < keys.length; i++) {
-			let label = this.choices[keys[i]];
-
-			if (dom.elem(label))
-				label = label.cloneNode(true);
-
-			sb.lastElementChild.appendChild(E('li', {
-				'data-value': keys[i],
-				'selected': (this.values.indexOf(keys[i]) > -1) ? '' : null
-			}, [ label ?? keys[i] ]));
-		}
-
-		if (this.options.create) {
-			const createEl = E('input', {
-				'type': 'text',
-				'class': 'create-item-input',
-				'readonly': this.options.readonly ? '' : null,
-				'maxlength': this.options.maxlength,
-				'placeholder': this.options.custom_placeholder ?? this.options.placeholder,
-				'inputmode': 'text',
-				'enterkeyhint': 'done'
-			});
-
-			if (this.options.datatype || this.options.validate)
-				UI.prototype.addValidator(createEl, this.options.datatype ?? 'string',
-				                          true, this.options.validate, 'blur', 'keyup');
-
-			sb.lastElementChild.appendChild(E('li', { 'data-value': '-' }, createEl));
-		}
-
-		if (this.options.create_markup)
-			sb.appendChild(E('script', { type: 'item-template' },
-				this.options.create_markup));
-
-		return this.bind(sb);
-	},
-
-	bind(sb) {
-		const o = this.options;
-
-		o.multiple = sb.hasAttribute('multiple');
-		o.keep_order = sb.hasAttribute('keep_order');
-		o.optional = sb.hasAttribute('optional');
-		o.placeholder = sb.getAttribute('placeholder') ?? o.placeholder;
-		o.display_items = parseInt(sb.getAttribute('display-items') ?? o.display_items);
-		o.dropdown_items = parseInt(sb.getAttribute('dropdown-items') ?? o.dropdown_items);
-		o.create_query = sb.getAttribute('item-create') ?? o.create_query;
-		o.create_template = sb.getAttribute('item-template') ?? o.create_template;
-
-		const ul = sb.querySelector('ul');
-		const more = sb.appendChild(E('span', { class: 'more', tabindex: -1 }, '···'));
-		sb.appendChild(E('span', { class: 'open', tabindex: -1 }, '▾'));
-		const canary = sb.appendChild(E('div'));
-		const create = sb.querySelector(this.options.create_query);
-		let ndisplay = this.options.display_items;
-		let n = 0;
-
-		if (this.options.multiple) {
-			let items = ul.querySelectorAll('li');
-
-			for (let i = 0; i < items.length; i++) {
-				this.transformItem(sb, items[i]);
-
-				if (items[i].hasAttribute('selected')) {
-					if (ndisplay-- > 0)
-						items[i].setAttribute('display', n++);
-
-					if (this.options.keep_order) {
-						const value = items[i].getAttribute('data-value');
-						if (this.values.includes(value))
-							items[i].setAttribute('data-order', this.values.indexOf(value) + 1);
-					}
-				}
-			}
-		}
-		else {
-			if (this.options.optional && !ul.querySelector('li[data-value=""]')) {
-				const placeholder = E('li', { placeholder: '' },
-					this.options.select_placeholder ?? this.options.placeholder);
-
-				ul.firstChild
-					? ul.insertBefore(placeholder, ul.firstChild)
-					: ul.appendChild(placeholder);
-			}
-
-			let items = ul.querySelectorAll('li');
-			const sel = sb.querySelectorAll('[selected]');
-
-			sel.forEach(s => {
-				s.removeAttribute('selected');
-			});
-
-			const s = sel[0] ?? items[0];
-			if (s) {
-				s.setAttribute('selected', '');
-				s.setAttribute('display', n++);
-			}
-
-			ndisplay--;
-		}
-
-		this.saveValues(sb, ul);
-
-		ul.setAttribute('tabindex', -1);
-		sb.setAttribute('tabindex', 0);
-
-		if (ndisplay < 0)
-			sb.setAttribute('more', '')
-		else
-			sb.removeAttribute('more');
-
-		if (ndisplay == this.options.display_items)
-			sb.setAttribute('empty', '')
-		else
-			sb.removeAttribute('empty');
-
-		dom.content(more, (ndisplay == this.options.display_items)
-			? (this.options.select_placeholder ?? this.options.placeholder) : '···');
-
-
-		sb.addEventListener('click', this.handleClick.bind(this));
-		sb.addEventListener('keydown', this.handleKeydown.bind(this));
-		sb.addEventListener('cbi-dropdown-close', this.handleDropdownClose.bind(this));
-		sb.addEventListener('cbi-dropdown-select', this.handleDropdownSelect.bind(this));
-
-		if ('ontouchstart' in window) {
-			sb.addEventListener('touchstart', ev => ev.stopPropagation());
-			window.addEventListener('touchstart', this.closeAllDropdowns);
-		}
-		else {
-			sb.addEventListener('focus', this.handleFocus.bind(this));
-
-			canary.addEventListener('focus', this.handleCanaryFocus.bind(this));
-
-			window.addEventListener('click', this.closeAllDropdowns);
-		}
-
-		if (create) {
-			create.addEventListener('keydown', this.handleCreateKeydown.bind(this));
-			create.addEventListener('focus', this.handleCreateFocus.bind(this));
-			create.addEventListener('blur', this.handleCreateBlur.bind(this));
-
-			const li = findParent(create, 'li');
-
-			li.setAttribute('unselectable', '');
-			li.addEventListener('click', this.handleCreateClick.bind(this));
-		}
-
-		this.node = sb;
-
-		this.setUpdateEvents(sb, 'cbi-dropdown-open', 'cbi-dropdown-close');
-		this.setChangeEvents(sb, 'cbi-dropdown-change', 'cbi-dropdown-close');
-
-		dom.bindClassInstance(sb, this);
+	render(/* ... */) {
+		const sb = funcSed(
+			ui.Dropdown.prototype.render,
+			[
+				[new RegExp(/('multiple':[^\n]*this\.options\.multiple)/), `'keep_order': this.options.keep_order ? '' : null, $1`]
+			],
+			['dom']
+		).call(this, dom, ...arguments);
 
 		return sb;
 	},
 
-	toggleItem(sb, li, force_state) {
-		const ul = li.parentNode;
+	bind(/* ... */) {
+		const sb = funcSed(
+			ui.Dropdown.prototype.bind,
+			[
+				[new RegExp(/(o\.multiple\s*=)/), `o.keep_order = sb.hasAttribute('keep_order'); $1`],
+				[
+					new RegExp(/(if\s*\(items\[i\]\.hasAttribute\('selected'\)\s*&&\s*ndisplay--\s*>\s*0\)[\n\s]*items\[i\]\.setAttribute\('display',\s*n\+\+\);)/),
+					`$1
+					if (this.options.keep_order) {
+						const value = items[i].getAttribute('data-value');
+						if (items[i].hasAttribute('selected') && this.values.includes(value))
+							items[i].setAttribute('data-order', this.values.indexOf(value));
+					}`
+				]
+			],
+			['dom']
+		).call(this, dom, ...arguments);
 
-		if (li.hasAttribute('unselectable'))
-			return;
-
-		if (this.options.multiple) {
-			const cbox = li.querySelector('input[type="checkbox"]');
-			const items = li.parentNode.querySelectorAll('li');
-			const label = sb.querySelector('ul.preview');
-			let sel = li.parentNode.querySelectorAll('[selected]').length;
-			const more = sb.querySelector('.more');
-			let ndisplay = this.options.display_items;
-			let n = 0;
-
-			if (li.hasAttribute('selected')) {
-				if (force_state !== true) {
-					if (sel > 1 || this.options.optional) {
-						li.removeAttribute('selected');
-						cbox.checked = cbox.disabled = false;
-						sel--;
-
-						if (this.options.keep_order)
-							li.removeAttribute('data-order');
-					}
-					else {
-						cbox.disabled = true;
-					}
-				}
-			}
-			else {
-				if (force_state !== false) {
-					li.setAttribute('selected', '');
-					cbox.checked = true;
-					cbox.disabled = false;
-					sel++;
-
-					if (this.options.keep_order)
-						li.setAttribute('data-order', ++this.orderCounter);
-				}
-			}
-
-			while (label && label.firstElementChild)
-				label.removeChild(label.firstElementChild);
-
-			for (let i = 0; i < items.length; i++) {
-				items[i].removeAttribute('display');
-				if (items[i].hasAttribute('selected')) {
-					if (ndisplay-- > 0) {
-						items[i].setAttribute('display', n++);
-						if (label)
-							label.appendChild(items[i].cloneNode(true));
-					}
-					const c = items[i].querySelector('input[type="checkbox"]');
-					if (c)
-						c.disabled = (sel == 1 && !this.options.optional);
-				}
-			}
-
-			if (ndisplay < 0)
-				sb.setAttribute('more', '');
-			else
-				sb.removeAttribute('more');
-
-			if (ndisplay === this.options.display_items)
-				sb.setAttribute('empty', '');
-			else
-				sb.removeAttribute('empty');
-
-			dom.content(more, (ndisplay === this.options.display_items)
-				? (this.options.select_placeholder ?? this.options.placeholder) : '···');
-		}
-		else {
-			let sel = li.parentNode.querySelector('[selected]');
-			if (sel) {
-				sel.removeAttribute('display');
-				sel.removeAttribute('selected');
-			}
-
-			li.setAttribute('display', 0);
-			li.setAttribute('selected', '');
-
-			this.closeDropdown(sb);
-		}
-
-		this.saveValues(sb, ul);
+		return sb;
 	},
 
-	saveValues(sb, ul) {
-		const sel = Array.from(ul.querySelectorAll('li[selected]'));
-		const div = sb.lastElementChild;
-		const name = this.options.name;
-		let strval = '';
-		const values = [];
+	toggleItem(/* ... */) {
+		const result = funcSed(
+			ui.Dropdown.prototype.toggleItem,
+			[
+				[
+					new RegExp(/(li\.removeAttribute\('selected'\))/),
+					`if (this.options.keep_order)
+						li.removeAttribute('data-order');
+					$1`
+				],
+				[
+					new RegExp(/(li\.setAttribute\('selected',\s*''\))/),
+					`if (this.options.keep_order)
+						li.setAttribute('data-order', this.orderCounter++);
+					$1`
+				]
+			],
+			['dom']
+		).call(this, dom, ...arguments);
 
-		if (this.options.keep_order) {
-			sel.sort((a, b) =>
-				(+a.getAttribute('data-order') || 0) -
-				(+b.getAttribute('data-order') || 0)
-			);
-		}
+		return result;
+	},
 
-		while (div.lastElementChild)
-			div.removeChild(div.lastElementChild);
+	saveValues(/* ... */) {
+		const result = funcSed(
+			ui.Dropdown.prototype.saveValues,
+			[
+				[
+					new RegExp(/(const sel\s*=)([^;\n]+);/),
+					`$1 Array.from($2);
+					if (this.options.keep_order) {
+						sel.sort((a, b) =>
+							(+a.getAttribute('data-order') || 0) -
+							(+b.getAttribute('data-order') || 0)
+						);
+					}`
+				]
+			]
+		).call(this, ...arguments);
 
-		sel.forEach(s => {
-			if (s.hasAttribute('placeholder'))
-				return;
-
-			const v = {
-				text: s.innerText,
-				value: s.hasAttribute('data-value') ? s.getAttribute('data-value') : s.innerText,
-				element: s
-			};
-
-			div.appendChild(E('input', {
-				type: 'hidden',
-				name: name,
-				value: v.value
-			}));
-
-			values.push(v);
-
-			strval += strval.length ? ` ${v.value}` : v.value;
-		});
-
-		const detail = {
-			instance: this,
-			element: sb
-		};
-
-		if (this.options.multiple)
-			detail.values = values;
-		else
-			detail.value = values.length ? values[0] : null;
-
-		sb.value = strval;
-
-		sb.dispatchEvent(new CustomEvent('cbi-dropdown-change', {
-			bubbles: true,
-			detail: detail
-		}));
+		return result;
 	}
 });
 
 /* Method */
-/* thanks to homeproxy */
 function calcStringMD5(e) {
-	/* Thanks to https://stackoverflow.com/a/41602636 */
-	let h = (a, b) => {
-		let c, d, e, f, g;
-		c = a & 2147483648;
-		d = b & 2147483648;
-		e = a & 1073741824;
-		f = b & 1073741824;
-		g = (a & 1073741823) + (b & 1073741823);
-		return e & f ? g ^ 2147483648 ^ c ^ d : e | f ? g & 1073741824 ? g ^ 3221225472 ^ c ^ d : g ^ 1073741824 ^ c ^ d : g ^ c ^ d;
-	}, k = (a, b, c, d, e, f, g) => h((a = h(a, h(h(b & c | ~b & d, e), g))) << f | a >>> 32 - f, b),
-	l = (a, b, c, d, e, f, g) => h((a = h(a, h(h(b & d | c & ~d, e), g))) << f | a >>> 32 - f, b),
-	m = (a, b, c, d, e, f, g) => h((a = h(a, h(h(b ^ c ^ d, e), g))) << f | a >>> 32 - f, b),
-	n = (a, b, c, d, e, f, g) => h((a = h(a, h(h(c ^ (b | ~d), e), g))) << f | a >>> 32 - f, b),
-	p = a => { let b = '', d = ''; for (let c = 0; c <= 3; c++) d = a >>> 8 * c & 255, d = '0' + d.toString(16), b += d.substr(d.length - 2, 2); return b; };
-
-	let f = [], q, r, s, t, a, b, c, d;
-	e = (() => {
-		e = e.replace(/\r\n/g, '\n');
-		let b = '';
-		for (let d = 0; d < e.length; d++) {
-			let c = e.charCodeAt(d);
-			b += c < 128 ? String.fromCharCode(c) : c < 2048 ? String.fromCharCode(c >> 6 | 192) + String.fromCharCode(c & 63 | 128) :
-				String.fromCharCode(c >> 12 | 224) + String.fromCharCode(c >> 6 & 63 | 128) + String.fromCharCode(c & 63 | 128);
-		}
-		return b;
-	})();
-	f = (() => {
-		let c = e.length, a = c + 8, d = 16 * ((a - a % 64) / 64 + 1), b = Array(d - 1), f = 0, g = 0;
-		for (; g < c;) a = (g - g % 4) / 4, f = g % 4 * 8, b[a] |= e.charCodeAt(g) << f, g++;
-		a = (g - g % 4) / 4, b[a] |= 128 << g % 4 * 8, b[d - 2] = c << 3, b[d - 1] = c >>> 29;
-		return b;
-	})();
-
-	a = 1732584193, b = 4023233417, c = 2562383102, d = 271733878;
-	for (e = 0; e < f.length; e += 16) {
-		q = a, r = b, s = c, t = d;
-		a = k(a, b, c, d, f[e +  0],  7, 3614090360), d = k(d, a, b, c, f[e +  1], 12, 3905402710),
-		c = k(c, d, a, b, f[e +  2], 17,  606105819), b = k(b, c, d, a, f[e +  3], 22, 3250441966),
-		a = k(a, b, c, d, f[e +  4],  7, 4118548399), d = k(d, a, b, c, f[e +  5], 12, 1200080426),
-		c = k(c, d, a, b, f[e +  6], 17, 2821735955), b = k(b, c, d, a, f[e +  7], 22, 4249261313),
-		a = k(a, b, c, d, f[e +  8],  7, 1770035416), d = k(d, a, b, c, f[e +  9], 12, 2336552879),
-		c = k(c, d, a, b, f[e + 10], 17, 4294925233), b = k(b, c, d, a, f[e + 11], 22, 2304563134),
-		a = k(a, b, c, d, f[e + 12],  7, 1804603682), d = k(d, a, b, c, f[e + 13], 12, 4254626195),
-		c = k(c, d, a, b, f[e + 14], 17, 2792965006), b = k(b, c, d, a, f[e + 15], 22, 1236535329),
-		a = l(a, b, c, d, f[e +  1],  5, 4129170786), d = l(d, a, b, c, f[e +  6],  9, 3225465664),
-		c = l(c, d, a, b, f[e + 11], 14,  643717713), b = l(b, c, d, a, f[e +  0], 20, 3921069994),
-		a = l(a, b, c, d, f[e +  5],  5, 3593408605), d = l(d, a, b, c, f[e + 10],  9,   38016083),
-		c = l(c, d, a, b, f[e + 15], 14, 3634488961), b = l(b, c, d, a, f[e +  4], 20, 3889429448),
-		a = l(a, b, c, d, f[e +  9],  5,  568446438), d = l(d, a, b, c, f[e + 14],  9, 3275163606),
-		c = l(c, d, a, b, f[e +  3], 14, 4107603335), b = l(b, c, d, a, f[e +  8], 20, 1163531501),
-		a = l(a, b, c, d, f[e + 13],  5, 2850285829), d = l(d, a, b, c, f[e +  2],  9, 4243563512),
-		c = l(c, d, a, b, f[e +  7], 14, 1735328473), b = l(b, c, d, a, f[e + 12], 20, 2368359562),
-		a = m(a, b, c, d, f[e +  5],  4, 4294588738), d = m(d, a, b, c, f[e +  8], 11, 2272392833),
-		c = m(c, d, a, b, f[e + 11], 16, 1839030562), b = m(b, c, d, a, f[e + 14], 23, 4259657740),
-		a = m(a, b, c, d, f[e +  1],  4, 2763975236), d = m(d, a, b, c, f[e +  4], 11, 1272893353),
-		c = m(c, d, a, b, f[e +  7], 16, 4139469664), b = m(b, c, d, a, f[e + 10], 23, 3200236656),
-		a = m(a, b, c, d, f[e + 13],  4,  681279174), d = m(d, a, b, c, f[e +  0], 11, 3936430074),
-		c = m(c, d, a, b, f[e +  3], 16, 3572445317), b = m(b, c, d, a, f[e +  6], 23,   76029189),
-		a = m(a, b, c, d, f[e +  9],  4, 3654602809), d = m(d, a, b, c, f[e + 12], 11, 3873151461),
-		c = m(c, d, a, b, f[e + 15], 16,  530742520), b = m(b, c, d, a, f[e +  2], 23, 3299628645),
-		a = n(a, b, c, d, f[e +  0],  6, 4096336452), d = n(d, a, b, c, f[e +  7], 10, 1126891415),
-		c = n(c, d, a, b, f[e + 14], 15, 2878612391), b = n(b, c, d, a, f[e +  5], 21, 4237533241),
-		a = n(a, b, c, d, f[e + 12],  6, 1700485571), d = n(d, a, b, c, f[e +  3], 10, 2399980690),
-		c = n(c, d, a, b, f[e + 10], 15, 4293915773), b = n(b, c, d, a, f[e +  1], 21, 2240044497),
-		a = n(a, b, c, d, f[e +  8],  6, 1873313359), d = n(d, a, b, c, f[e + 15], 10, 4264355552),
-		c = n(c, d, a, b, f[e +  6], 15, 2734768916), b = n(b, c, d, a, f[e + 13], 21, 1309151649),
-		a = n(a, b, c, d, f[e +  4],  6, 4149444226), d = n(d, a, b, c, f[e + 11], 10, 3174756917),
-		c = n(c, d, a, b, f[e +  2], 15,  718787259), b = n(b, c, d, a, f[e +  9], 21, 3951481745),
-		a = h(a, q), b = h(b, r), c = h(c, s), d = h(d, t);
-	}
-	return (p(a) + p(b) + p(c) + p(d)).toLowerCase();
+	return md5(e);
 }
 
 /* Thanks to luci-app-ssr-plus */
@@ -1299,7 +1106,7 @@ function encodeBase64(input) {
  * Unzip Gzip data
  * @param {string|Array|ArrayBuffer|Uint8Array} input - Input data (Base64 string or binary object)
  * @param {boolean} asText - Return a string? (true: text, false: arrayBuffer)
- * @returns {Promise<string|Uint8Array>}
+ * @returns {Promise} string|Uint8Array
  */
 async function decompressGzip(input, asText = false) {
 	if (isEmpty(input))
@@ -1398,6 +1205,16 @@ function yaml2json(content, command) {
 	});
 
 	return callYaml2Json(content, command).then(res => res.result);
+}
+function yamlfile2json(type, filename, command) {
+	const callYamlfile2Json = rpc.declare({
+		object: 'luci.fchomo',
+		method: 'yamlfile2json',
+		params: ['type', 'filename', 'command'],
+		expect: { '': {} }
+	});
+
+	return callYamlfile2Json(type, filename, command).then(res => res.result);
 }
 
 function isEmpty(res) {
@@ -1510,6 +1327,7 @@ function loadLabelValues(uciconfig, sectiontype, options = {}) {
 
 	switch (sectiontype) {
 		case 'proxy_group':
+		case 'inbound':
 		case 'node':
 		case 'provider':
 			uci.sections(uciconfig, sectiontype, (res) => {
@@ -1606,6 +1424,84 @@ function getDashURL(isRunning) {
 		String.format(dashrepos_urlparams[repo] || '', host, port, secret)
 }
 
+function renderHy2Realm(s, uciconfig) {
+	let o;
+
+	o = s.taboption('field_general', form.Flag, 'hysteria2_realm', _('Realm'));
+	o.default = o.disabled;
+	o.depends('type', 'hysteria2');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_server_url', _('Rendezvous server'));
+	o.placeholder = 'https://realm.hy2.io';
+	o.rmempty = false;
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_token', _('Pre-shared key of rendezvous server'));
+	o.placeholder = 'public';
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_id', _('Realm ID'));
+	o.placeholder = 'my-cabin-1f3a8c2e9b';
+	o.rmempty = false;
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.DynamicList, 'hysteria2_realm_stun_servers', _('STUN servers'));
+	o.datatype = 'hostport';
+	o.default = ['stun.nextcloud.com:3478','stun.sip.us:3478','global.stun.twilio.com:3478'];
+	o.rmempty = false;
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	// 下面支持填写针对server-url的TLS配置(sni, skip-cert-verify, name-cert-verify, fingerprint, certificate, private-key, alpn)
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_sni', _('TLS SNI'),
+		_('Hostname that the client attempts to connect to at the start of the TLS handshake process.'));
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.DynamicList, 'hysteria2_realm_alpn', _('TLS ALPN'),
+		_('List of supported application level protocols, in order of preference.'));
+	o.default = ['h2', 'http/1.1'];
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_fingerprint', _('Cert fingerprint'),
+		_('Certificate fingerprint. Used to implement SSL Pinning and prevent MitM.'));
+	o.validate = validateSha256Key || hm.validateSha256Key;
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_name_cert_verify', _('Override cert DNSName'),
+		_('Used to verify the hostname on the returned certificates.'));
+	o.datatype = 'hostname';
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Flag, 'hysteria2_realm_skip_cert_verify', _('Skip cert verify'),
+		_('Donot verifying server certificate.') +
+		'<br/>' +
+		_('This is <strong>DANGEROUS</strong>, your traffic is almost like <strong>PLAIN TEXT</strong>! Use at your own risk!'));
+	o.default = o.disabled;
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_cert_path', _('Certificate path') + _(' (mTLS)'),
+		_('The %s public key, in PEM format.').format(_('Client')));
+	o.value('/etc/fchomo/certs/client_publickey.pem');
+	o.depends('hysteria2_realm', '1');
+	o.modalonly = true;
+
+	o = s.taboption('field_hysteria2_realm', form.Value, 'hysteria2_realm_key_path', _('Key path') + _(' (mTLS)'),
+		_('The %s private key, in PEM format.').format(_('Client')));
+	o.value('/etc/fchomo/certs/client_privatekey.pem');
+	o.depends({hysteria2_realm: '1', hysteria2_realm_cert_path: /.+/});
+	o.modalonly = true;
+}
+
 function renderResDownload(section_id) {
 	const section_type = this.section.sectiontype;
 	const type = uci.get(this.config, section_id, 'type');
@@ -1620,6 +1516,8 @@ function renderResDownload(section_id) {
 				if (type === 'http') {
 					return downloadFile(section_type, section_id, url, header).then((res) => {
 						ui.addNotification(null, E('p', _('Download successful.')), 'info');
+						if (this.callback)
+							this.callback(section_type, section_id);
 					}).catch((e) => {
 						ui.addNotification(null, E('p', _('Download failed: %s').format(e)), 'error');
 					});
@@ -1632,8 +1530,29 @@ function renderResDownload(section_id) {
 	return El;
 }
 
-function handleGenKey(option) {
-	const section_id = this.section.section;
+function renderResLink(section_id) {
+	const section_type = this.section.sectiontype;
+	const type = uci.get(this.config, section_id, 'type');
+
+	let El = E([
+		E('span', {
+			title: this.readonly ? this.readonly : null
+		}, [
+			E('button', {
+				class: 'cbi-button cbi-button-apply',
+				disabled: (this.readonly !== false || type === 'inline') || null,
+				click: ui.createHandlerFn(this, (section_type, section_id) => {
+					let path = encodeURIComponent(`${HM_DIR.replace(/^\//, '')}/${section_type}`);
+					return window.open(`${window.location.origin}/tinyfilemanager/index.php?p=${path}&view=${section_id}`, '_blank', 'noopener');
+				}, section_type, section_id)
+			}, [ _('🔗') ])
+		])
+	]);
+
+	return El;
+}
+
+function handleGenKey(section_id, option) {
 	const type = this.section.getOption('type')?.formvalue(section_id);
 	const widget = L.bind(function(option) {
 		return this.map.findElement('id', 'widget.' + this.cbid(section_id).replace(/\.[^\.]+$/, '.') + option);
@@ -1806,7 +1725,7 @@ function validateCommonPort(section_id, value) {
 	for (let custom of arr) {
 		if (!routing_port_type.map(e => e[0]).includes(custom)) {
 			let ports = [];
-			for (let i of custom.split(',')) {
+			for (let i of custom.split(this.hm_separator ?? ',')) {
 				if (!stubValidator.apply('port', i) && !stubValidator.apply('portrange', i))
 					return _('Expecting: %s').format(_('valid port value'));
 				if (ports.includes(i))
@@ -1879,12 +1798,34 @@ function validateUrl(section_id, value) {
 	return true;
 }
 
+function validateHexstr(length, section_id, value) {
+	if (!value)
+		return true;
+
+	length /= 4; // Convert bits to hex characters
+	const regexp = new RegExp(`^[0-9a-fA-F]{${length}}$`);
+	if (!value.match(regexp))
+		return _('Expecting: %s').format(_('valid hex string with %d characters').format(length));
+
+	return true;
+}
+
 function validateBase64Key(length, section_id, value) {
 	/* Thanks to luci-proto-wireguard */
-	if (value)
+	if (value) {
 		if (value.length !== length || !value.match(/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/) || value[length-1] !== '=')
 			return _('Expecting: %s').format(_('valid base64 key with %d characters').format(length));
+	} else if (this.rmempty === false || (this.optional ?? true) !== false)
+		return _('Expecting: %s').format(_('non-empty value'));
 
+	return true;
+}
+
+function validateSha256Key(section_id, value) {
+	if (!value)
+		return true;
+	if (!((value.length === 64) && (value.match(/^[0-9a-fA-F]+$/))))
+		return _('Expecting: %s').format(_('valid SHA256 string with %d characters').format(64));
 	return true;
 }
 
@@ -1986,15 +1927,15 @@ function lsDir(type) {
 	});
 }
 
-function readFile(type, filename) {
+function readFile(type, filename, isbinary) {
 	const callReadFile = rpc.declare({
 		object: 'luci.fchomo',
 		method: 'file_read',
-		params: ['type', 'filename'],
+		params: ['type', 'filename', 'isbinary'],
 		expect: { '': {} }
 	});
 
-	return L.resolveDefault(callReadFile(type, filename), {}).then((res) => {
+	return L.resolveDefault(callReadFile(type, filename, isbinary), {}).then((res) => {
 		if (res.content ?? true) {
 			return res.content;
 		} else
@@ -2002,15 +1943,15 @@ function readFile(type, filename) {
 	});
 }
 
-function writeFile(type, filename, content) {
+function writeFile(type, filename, content, isbinary) {
 	const callWriteFile = rpc.declare({
 		object: 'luci.fchomo',
 		method: 'file_write',
-		params: ['type', 'filename', 'content'],
+		params: ['type', 'filename', 'content', 'isbinary'],
 		expect: { '': {} }
 	});
 
-	return L.resolveDefault(callWriteFile(type, filename, content), {}).then((res) => {
+	return L.resolveDefault(callWriteFile(type, filename, content, isbinary), {}).then((res) => {
 		if (res.result) {
 			return res.result;
 		} else
@@ -2100,6 +2041,7 @@ return baseclass.extend({
 	monospacefonts,
 	checkurls,
 	congestion_controller,
+	ipstack_congestion_controller,
 	bbr_profiles,
 	stunserver,
 	dashrepos,
@@ -2129,10 +2071,13 @@ return baseclass.extend({
 
 	/* Prototype */
 	GridSection: CBIGridSection,
-	DynamicList: CBIDynamicList,
-	MultiValue: CBIMultiValue,
-	StaticList: CBIStaticList,
 	ListValue: CBIListValue,
+	DynamicList: CBIDynamicList, // @less_25_12
+	StaticList: CBIStaticList,
+	MultiValue: CBIMultiValue,
+	GroupListValue: CBIGroupListValue,
+	GroupDynamicList: CBIGroupDynamicList,
+	GroupStaticList: CBIGroupStaticList,
 	RichValue: CBIRichValue,
 	RichMultiValue: CBIRichMultiValue,
 	TextValue: CBITextValue,
@@ -2151,6 +2096,7 @@ return baseclass.extend({
 	shuffle,
 	json2yaml,
 	yaml2json,
+	yamlfile2json,
 	isEmpty,
 	removeBlankAttrs,
 	toUciname,
@@ -2166,28 +2112,31 @@ return baseclass.extend({
 	renderStatus,
 	updateStatus,
 	getDashURL,
+	renderHy2Realm,
 	renderResDownload,
+	renderResLink,
 	handleGenKey,
 	handleReload,
 	handleRemoveIdles,
-	textvalue2Value,
+	textvalue2Value,  // this
 	// validate
 	validateAuth,
 	validateAuthUsername,
 	validateAuthPassword,
-	validateCommonPort,
+	validateCommonPort,  // this
 	validateBytesize,
 	validateTimeDuration,
 	validateJson,
 	validateUUID,
 	validateUrl,
-	// validate with bind this
-	validateBase64Key,
-	validateMTLSClientAuth,
-	validatePresetIDs,
-	validateShadowsocksPassword,
+	validateHexstr,
+	validateBase64Key,  // this
+	validateSha256Key,
+	validateMTLSClientAuth,  // this
+	validatePresetIDs,  // this
+	validateShadowsocksPassword,  // this
 	validateSudokuCustomTable,
-	validateUniqueValue,
+	validateUniqueValue,  // this
 	// file operations
 	lsDir,
 	readFile,

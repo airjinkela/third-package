@@ -21,8 +21,9 @@ func resetViper(t *testing.T) {
 	viper.SetDefault("log-level", "info")
 	viper.SetDefault("user-agent", "FFF")
 	viper.SetDefault("rewrite-mode", "GLOBAL")
-	viper.SetDefault("desync.reorder-bytes", 8)
-	viper.SetDefault("desync.reorder-packets", 1500)
+	viper.SetDefault("l3-rewrite.ttl-value", DefaultTTL)
+	viper.SetDefault("desync.reorder-bytes", 1500)
+	viper.SetDefault("desync.reorder-packets", 8)
 	viper.SetDefault("desync.inject-ttl", 3)
 }
 
@@ -68,12 +69,13 @@ func TestDefaultConfig(t *testing.T) {
 		{"UserAgentRegex", cfg.UserAgentRegex, ""},
 		{"UserAgentPartialReplace", cfg.UserAgentPartialReplace, false},
 		{"TTL", cfg.TTL, false},
+		{"L3Rewrite.TTLValue", cfg.L3Rewrite.TTLValue, DefaultTTL},
 		{"IPID", cfg.IPID, false},
 		{"TCPTimeStamp", cfg.TCPTimeStamp, false},
 		{"TCPInitialWindow", cfg.TCPInitialWindow, false},
 		{"Desync.Reorder", cfg.Desync.Reorder, false},
-		{"Desync.ReorderBytes", cfg.Desync.ReorderBytes, uint32(8)},
-		{"Desync.ReorderPackets", cfg.Desync.ReorderPackets, uint32(1500)},
+		{"Desync.ReorderBytes", cfg.Desync.ReorderBytes, uint32(1500)},
+		{"Desync.ReorderPackets", cfg.Desync.ReorderPackets, uint32(8)},
 		{"Desync.Inject", cfg.Desync.Inject, false},
 		{"Desync.InjectTTL", cfg.Desync.InjectTTL, uint8(3)},
 	}
@@ -99,7 +101,9 @@ rewrite-mode: RULE
 user-agent: "TestAgent"
 user-agent-regex: "(Android|iOS)"
 user-agent-partial-replace: true
-ttl: true
+l3-rewrite:
+  ttl: true
+  ttl-value: 128
 ipid: true
 tcp_timestamp: true
 tcp_initial_window: true
@@ -145,6 +149,9 @@ desync:
 	}
 	if !cfg.TTL {
 		t.Error("TTL should be true")
+	}
+	if cfg.L3Rewrite.TTLValue != 128 {
+		t.Errorf("L3Rewrite.TTLValue = %v, want 128", cfg.L3Rewrite.TTLValue)
 	}
 	if !cfg.IPID {
 		t.Error("IPID should be true")
@@ -456,6 +463,50 @@ func TestValidation_InvalidPort(t *testing.T) {
 			_, err := BuildConfigFromViper()
 			if err == nil {
 				t.Fatalf("expected validation error for port %d, got nil", tt.port)
+			}
+		})
+	}
+}
+
+func TestValidation_TTLValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    uint
+		wantErr bool
+	}{
+		{name: "minimum", value: "1", want: 1},
+		{name: "maximum", value: "255", want: 255},
+		{name: "quoted_integer", value: "\"128\"", want: 128},
+		{name: "zero", value: "0", wantErr: true},
+		{name: "too_large", value: "256", wantErr: true},
+		{name: "wraps_to_one", value: "257", wantErr: true},
+		{name: "wraps_to_44", value: "300", wantErr: true},
+		{name: "wraps_to_maximum", value: "511", wantErr: true},
+		{name: "negative", value: "-1", wantErr: true},
+		{name: "quoted_negative", value: "\"-1\"", wantErr: true},
+		{name: "quoted_overflow", value: "\"257\"", wantErr: true},
+		{name: "quoted_fraction", value: "\"1.5\"", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViper(t)
+			path := writeConfigFile(t, "l3-rewrite:\n  ttl: true\n  ttl-value: "+tt.value+"\n")
+			loadConfigFile(t, path)
+
+			cfg, err := BuildConfigFromViper()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for ttl-value %s, got nil", tt.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error for ttl-value %s: %v", tt.value, err)
+			}
+			if got := cfg.L3Rewrite.TTLValue; got != tt.want {
+				t.Fatalf("TTLValue = %d, want %s", got, tt.value)
 			}
 		})
 	}
@@ -842,6 +893,8 @@ header-rewrite:
     match-value: "22"
     action: DIRECT
     enabled: false
+  - type: FINAL
+    action: DIRECT
 `
 	path := writeConfigFile(t, yaml)
 	loadConfigFile(t, path)
@@ -851,14 +904,17 @@ header-rewrite:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(cfg.HeaderRules) != 2 {
-		t.Fatalf("HeaderRules count = %d, want 2", len(cfg.HeaderRules))
+	if len(cfg.HeaderRules) != 3 {
+		t.Fatalf("HeaderRules count = %d, want 3", len(cfg.HeaderRules))
 	}
-	if !cfg.HeaderRules[0].Enabled {
+	if cfg.HeaderRules[0].Enabled == nil || !*cfg.HeaderRules[0].Enabled {
 		t.Error("HeaderRules[0].Enabled should be true")
 	}
-	if cfg.HeaderRules[1].Enabled {
+	if cfg.HeaderRules[1].Enabled == nil || *cfg.HeaderRules[1].Enabled {
 		t.Error("HeaderRules[1].Enabled should be false")
+	}
+	if cfg.HeaderRules[2].Enabled != nil {
+		t.Error("omitted Enabled should remain nil for default enablement")
 	}
 }
 

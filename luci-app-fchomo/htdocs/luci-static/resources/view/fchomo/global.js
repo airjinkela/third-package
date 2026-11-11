@@ -498,7 +498,7 @@ return view.extend({
 		so.value('redir', _('Redirect TCP'));
 		if (features.has_tproxy)
 			so.value('redir_tproxy', _('Redirect TCP + TProxy UDP'));
-		if (features.has_ip_full && features.has_tun) {
+		if (features.has_tun) {
 			so.value('redir_tun', _('Redirect TCP + Tun UDP'));
 			so.value('tun', _('Tun TCP/UDP'));
 		} else
@@ -512,12 +512,13 @@ return view.extend({
 
 		so = ss.option(form.RichListValue, 'tun_stack', _('Stack'),
 			_('Tun stack.'));
-		so.value('system', _('System'), _('Less compatibility and sometimes better performance.'));
+		so.value('mips', _('mihomo IP stack (MIPS)'));
 		if (features.with_gvisor) {
 			so.value('gvisor', _('gVisor'), _('Based on google/gvisor.'));
 			so.value('mixed', _('Mixed'), _('Mixed <code>system</code> TCP stack and <code>gVisor</code> UDP stack.'));
 		}
-		so.default = 'system';
+		so.value('system', _('System'), _('Less compatibility and sometimes better performance.'));
+		so.default = 'mips';
 		so.rmempty = false;
 
 		so = ss.option(form.Value, 'tun_mtu', _('MTU'));
@@ -544,6 +545,13 @@ return view.extend({
 		so = ss.option(form.Flag, 'tun_disable_icmp_forwarding', _('Disable ICMP Forwarding'),
 			_('Prevent ICMP loopback issues in some cases. Ping will not show real delay.'));
 		so.default = so.enabled;
+
+		so = ss.option(form.ListValue, 'tun_congestion_controller', _('Congestion controller'));
+		so.default = hm.ipstack_congestion_controller[0][0];
+		hm.ipstack_congestion_controller.forEach((res) => {
+			so.value.apply(so, res);
+		})
+		so.depends('tun_stack', 'mips');
 		/* Inbound END */
 
 		/* TLS START */
@@ -588,7 +596,7 @@ return view.extend({
 			}
 		}
 		so.renderWidget = function(section_id, option_index, cfgvalue) {
-			let node = hm.TextValue.prototype.renderWidget.call(this, section_id, option_index, cfgvalue);
+			let node = hm.TextValue.prototype.renderWidget.apply(this, arguments);
 			const cbid = this.cbid(section_id) + '._outer_sni';
 
 			node.appendChild(E('div',  { 'class': 'control-group' }, [
@@ -603,7 +611,7 @@ return view.extend({
 					click: ui.createHandlerFn(this, () => {
 						this.hm_options.params = document.getElementById(cbid).value;
 
-						return hm.handleGenKey.call(this, this.hm_options);
+						return hm.handleGenKey.call(this, section_id, this.hm_options);
 					})
 				}, [ _('Generate') ])
 			]));
@@ -823,7 +831,7 @@ return view.extend({
 			_('As the TOP upstream of dnsmasq.'));
 		so.default = so.disabled;
 		so.validate = function(section_id, value) {
-			let desc = this.getUIElement(section_id).node.nextSibling;
+			const desc = this.getUIElement(section_id).node.nextSibling;
 			value = this.formvalue(section_id);
 
 			if (value == 1)

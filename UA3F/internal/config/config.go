@@ -26,6 +26,8 @@ const (
 	RewriteModeGlobal RewriteMode = "GLOBAL"
 	RewriteModeDirect RewriteMode = "DIRECT"
 	RewriteModeRule   RewriteMode = "RULE"
+
+	DefaultTTL uint = 64
 )
 
 type Config struct {
@@ -80,8 +82,8 @@ type MitMConfig struct {
 
 type DesyncConfig struct {
 	DesyncPorts    string `yaml:"desync-ports,omitempty"`
-	ReorderBytes   uint32 `yaml:"reorder-bytes" default:"8" validate:"min=0"`
-	ReorderPackets uint32 `yaml:"reorder-packets" default:"1500" validate:"min=0"`
+	ReorderBytes   uint32 `yaml:"reorder-bytes" default:"1500" validate:"min=0"`
+	ReorderPackets uint32 `yaml:"reorder-packets" default:"8" validate:"min=0"`
 	Reorder        bool   `yaml:"reorder"`
 	Inject         bool   `yaml:"inject"`
 	InjectTTL      uint8  `yaml:"inject-ttl" default:"3" validate:"min=0"`
@@ -90,6 +92,7 @@ type DesyncConfig struct {
 type L3RewriteConfig struct {
 	BPFOffload bool `yaml:"bpf-offload"`
 	TTL        bool `yaml:"ttl"`
+	TTLValue   uint `yaml:"ttl-value" validate:"min=1,max=255"`
 	IPID       bool `yaml:"ipid"`
 	TCPWIN     bool `yaml:"tcpwin"`
 	TCPTS      bool `yaml:"tcpts"`
@@ -97,7 +100,7 @@ type L3RewriteConfig struct {
 }
 
 type Rule struct {
-	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 
 	Type string `json:"type" yaml:"type" validate:"required,oneof=HEADER-KEYWORD HEADER-REGEX DEST-PORT IP-CIDR SRC-IP DOMAIN-SUFFIX DOMAIN-KEYWORD DOMAIN DOMAIN-SET URL-REGEX FINAL"`
 
@@ -183,6 +186,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Attr{
 			Key: "L3 Rewrite", Value: slog.GroupValue(
 				slog.Bool("Set TTL", c.L3Rewrite.TTL),
+				slog.Uint64("TTL Value", uint64(c.L3Rewrite.TTLValue)),
 				slog.Bool("Set IP ID", c.L3Rewrite.IPID),
 				slog.Bool("Delete TCP Timestamp", c.L3Rewrite.TCPTS),
 				slog.Bool("Set TCP Initial Window", c.L3Rewrite.TCPWIN),

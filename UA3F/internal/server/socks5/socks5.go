@@ -50,19 +50,20 @@ func New(cfg *config.Config, rw common.Rewriter, rc *statistics.Recorder, middle
 	}
 }
 
-func (s *Server) Start() (err error) {
+func (s *Server) Start() error {
 	if s.listener == nil {
 		// first time start, create listener
 		listenAddr := fmt.Sprintf("%s:%d", s.Cfg.BindAddress, s.Cfg.Port)
-		if s.listener, err = net.Listen("tcp", listenAddr); err != nil {
+		listener, err := net.Listen("tcp", listenAddr)
+		if err != nil {
 			return fmt.Errorf("net.Listen: %w", err)
 		}
+		s.listener = listener
 	}
 
 	s.Recorder.Start()
 
 	go func() {
-		var client net.Conn
 		for {
 			select {
 			case <-s.done:
@@ -70,7 +71,8 @@ func (s *Server) Start() (err error) {
 			default:
 			}
 
-			if client, err = s.listener.Accept(); err != nil {
+			client, err := s.listener.Accept()
+			if err != nil {
 				if errors.Is(err, syscall.EMFILE) {
 					time.Sleep(time.Second)
 				} else if errors.Is(err, net.ErrClosed) {
@@ -136,8 +138,11 @@ func (s *Server) Restart(cfg *config.Config) (common.Server, error) {
 }
 
 func (s *Server) HandleClient(conn net.Conn) {
+	closeConn := true
 	defer func() {
-		_ = conn.Close()
+		if closeConn {
+			_ = conn.Close()
+		}
 	}()
 
 	srcAddr := conn.RemoteAddr().String()
@@ -160,11 +165,15 @@ func (s *Server) HandleClient(conn net.Conn) {
 		err = s.handleConnect(conn, request)
 		if err != nil {
 			err = fmt.Errorf("s.handleConnect: %w", err)
+		} else {
+			closeConn = false
 		}
 	case socks.CmdBind:
 		err = s.handleBind(conn)
 		if err != nil {
 			err = fmt.Errorf("s.handleBind: %w", err)
+		} else {
+			closeConn = false
 		}
 	case socks.CmdUDP:
 		err = s.handleUDPAssociate(conn)
@@ -253,12 +262,10 @@ func (s *Server) handleBind(conn net.Conn) error {
 		}
 		return fmt.Errorf("listener.AcceptTCP: %w", err)
 	}
-	defer func() {
-		_ = newConn.Close()
-	}()
 
 	raddr, _ := socks.NewAddr(newConn.RemoteAddr().String())
 	if err := socks.NewReply(socks.Succeeded, raddr).Write(conn); err != nil {
+		_ = newConn.Close()
 		return fmt.Errorf("socks.NewReply.Write: %w", err)
 	}
 

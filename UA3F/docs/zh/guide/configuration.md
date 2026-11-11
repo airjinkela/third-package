@@ -83,6 +83,8 @@ user-agent-partial-replace: false
 
 规则配置仅在 `rewrite-mode: RULE` 时使用。YAML 适合长期维护；命令行参数和环境变量接收 JSON 字符串，适合自动化注入。
 
+YAML 和 JSON 规则均默认启用，设置 `enabled: false` 可禁用规则。
+
 ```yaml
 rewrite-mode: RULE
 
@@ -152,6 +154,7 @@ L3 重写用于调整 TTL、IPID、TCP Timestamp、TCP 初始窗口，并可阻�
 ```yaml
 l3-rewrite:
   ttl: true
+  ttl-value: 64
   ipid: true
   tcpts: true
   tcpwin: true
@@ -162,6 +165,7 @@ l3-rewrite:
 | 功能 | 推荐 YAML | 兼容 YAML | 命令行参数 | 环境变量 | 默认值 |
 | --- | --- | --- | --- | --- | --- |
 | TTL 重写 | `l3-rewrite.ttl` | `ttl` | `--ttl`, `--l3-rewrite-ttl` | `UA3F_L3_REWRITE_TTL`, `UA3F_TTL` | `false` |
+| TTL 目标值 | `l3-rewrite.ttl-value` | - | `--l3-rewrite-ttl-value` | `UA3F_L3_REWRITE_TTL_VALUE` | `64` |
 | IPID 重写 | `l3-rewrite.ipid` | `ipid` | `--ipid`, `--l3-rewrite-ipid` | `UA3F_L3_REWRITE_IPID`, `UA3F_IPID` | `false` |
 | 删除 TCP Timestamp | `l3-rewrite.tcpts` | `tcp_timestamp` | `--tcpts`, `--l3-rewrite-tcpts` | `UA3F_L3_REWRITE_TCPTS`, `UA3F_TCPTS` | `false` |
 | 修改 TCP 初始窗口 | `l3-rewrite.tcpwin` | `tcp_initial_window` | `--tcpwin`, `--l3-rewrite-tcpwin` | `UA3F_L3_REWRITE_TCPWIN`, `UA3F_TCP_INIT_WINDOW` | `false` |
@@ -170,6 +174,8 @@ l3-rewrite:
 
 L3 eBPF 加速要求 Linux 内核 `>= 5.15`。详见 [L3 重写](/zh/l3/overview.md) 与 [eBPF 加速](/zh/ebpf/l3-rewrite.md)。
 
+netfilter 路径开启软件流量卸载时，`ttl-value: 255` 的卸载转发包实际出站 TTL 为 `254`。详见 [TTL 重写限制](/zh/l3/ttl.md)。
+
 ## Desync
 
 Desync 用于 TCP 分片乱序发射和 TCP 混淆注入。
@@ -177,8 +183,8 @@ Desync 用于 TCP 分片乱序发射和 TCP 混淆注入。
 ```yaml
 desync:
   reorder: false
-  reorder-bytes: 8
-  reorder-packets: 1500
+  reorder-bytes: 1500
+  reorder-packets: 8
   inject: false
   inject-ttl: 3
   desync-ports: ""
@@ -187,8 +193,8 @@ desync:
 | 功能 | YAML | 命令行参数 | 环境变量 | 默认值 |
 | --- | --- | --- | --- | --- |
 | TCP 分片乱序发射 | `desync.reorder` | `--desync-reorder` | `UA3F_DESYNC_REORDER` | `false` |
-| 乱序分片字节数 | `desync.reorder-bytes` | `--desync-reorder-bytes` | `UA3F_DESYNC_REORDER_BYTES` | `8` |
-| 乱序包大小 | `desync.reorder-packets` | `--desync-reorder-packets` | `UA3F_DESYNC_REORDER_PACKETS` | `1500` |
+| 乱序分片字节数 | `desync.reorder-bytes` | `--desync-reorder-bytes` | `UA3F_DESYNC_REORDER_BYTES` | `1500` |
+| 乱序包大小 | `desync.reorder-packets` | `--desync-reorder-packets` | `UA3F_DESYNC_REORDER_PACKETS` | `8` |
 | TCP 混淆注入 | `desync.inject` | `--desync-inject` | `UA3F_DESYNC_INJECT` | `false` |
 | 注入包 TTL | `desync.inject-ttl` | `--desync-inject-ttl` | `UA3F_DESYNC_INJECT_TTL` | `3` |
 | 生效端口 | `desync.desync-ports` | `--desync-ports` | `UA3F_DESYNC_PORTS` | 空 |

@@ -314,7 +314,7 @@ return view.extend({
 	o.modalonly = true;
 
 	o = s.option(form.Flag, 'use_ubus', _('Use Ubus'));
-	o.default = '0';
+	o.default = '1';
 	o.rmempty = false;
 	o.modalonly = true;
 
@@ -373,6 +373,7 @@ return view.extend({
 	o.value('ip', _('IPv4'));
 	o.value('ipv6', _('IPv6'));
 	o.value('ipv4v6', _('IPv4/IPv6'));
+	o.value('ethernet', _('Ethernet'));
 	o.default = 'ipv4v6';
 	o.rmempty = false;
 	o.modalonly = true;
@@ -1017,15 +1018,5 @@ return view.extend({
 				}, _('Confirm'))
 			])
 		]);
-	},
-
-	handleSaveApply: function(ev, mode) {
-		return this.handleSave(ev).then(function() {
-			return callInitAction('qmodem_network', 'reload');
-		});
-	},
-
-	handleSave: function(ev) {
-		return this.super('handleSave', arguments);
 	}
 });

@@ -116,14 +116,20 @@ export function bytesizeToByte(str) {
 	let bytes = 0;
 	let arr = match(str, /^(\d+)(k|m|g)?b?$/);
 	if (arr) {
-		if (arr[2] === 'k') {
-			bytes = strToInt(arr[1]) * 1024;
-		} else if (arr[2] === 'm') {
-			bytes = strToInt(arr[1]) * 1048576;
-		} else if (arr[2] === 'g') {
-			bytes = strToInt(arr[1]) * 1073741824;
-		} else
-			bytes = strToInt(arr[1]);
+		switch (arr[2]) {
+			case 'k':
+				bytes = strToInt(arr[1]) * 1024;
+				break;
+			case 'm':
+				bytes = strToInt(arr[1]) * 1048576;
+				break;
+			case 'g':
+				bytes = strToInt(arr[1]) * 1073741824;
+				break;
+			default:
+				bytes = strToInt(arr[1]);
+				break;
+		}
 	}
 
 	return bytes;
@@ -135,16 +141,23 @@ export function durationToSecond(str) {
 	let seconds = 0;
 	let arr = match(str, /^(\d+)(s|m|h|d)?$/);
 	if (arr) {
-		if (arr[2] === 's') {
-			seconds = strToInt(arr[1]);
-		} else if (arr[2] === 'm') {
-			seconds = strToInt(arr[1]) * 60;
-		} else if (arr[2] === 'h') {
-			seconds = strToInt(arr[1]) * 3600;
-		} else if (arr[2] === 'd') {
-			seconds = strToInt(arr[1]) * 86400;
-		} else
-			seconds = strToInt(arr[1]);
+		switch (arr[2]) {
+			case 's':
+				seconds = strToInt(arr[1]);
+				break;
+			case 'm':
+				seconds = strToInt(arr[1]) * 60;
+				break;
+			case 'h':
+				seconds = strToInt(arr[1]) * 3600;
+				break;
+			case 'd':
+				seconds = strToInt(arr[1]) * 86400;
+				break;
+			default:
+				seconds = strToInt(arr[1]);
+				break;
+		}
 	}
 
 	return seconds;
@@ -211,16 +224,24 @@ export function parseVlessEncryption(payload, side) {
 		(isEmpty(content.keypairs) ? '' : '.' + join('.', map(content.keypairs, e => e[side]))); // Required
 };
 
-export function parseListener(cfg) {
+export function parseListener(cfg, proxyResolver) {
+	if (proxyResolver == null)
+		proxyResolver = value => value;
+	else
+		assert(
+			type(proxyResolver) == 'function',
+			'parseListener: proxyResolver must be a function'
+		);
+
 	return {
-		name: cfg['.name'],
+		name: cfg.label,
 		type: cfg.type,
 
 		listen: cfg.listen || '::',
-		port: strToInt(cfg.port),
+		port: strToInt(cfg.listen_port),
 		"routing-mark": strToInt(cfg.routing_mark) || null,
 		rule: cfg.rule,
-		proxy: cfg.proxy, // raw data need post-processing
+		proxy: proxyResolver(cfg.proxy),
 
 		/* HTTP / SOCKS / Mieru / VMess / VLESS / Trojan / AnyTLS / Tuic / Hysteria2 / TrustTunnel */
 		users: (cfg.type in ['http', 'socks', 'mixed', 'vmess', 'vless', 'trojan', 'trusttunnel']) ? [
@@ -236,13 +257,13 @@ export function parseListener(cfg) {
 			} : null
 			/*{
 			}*/
-		] : ((cfg.type in ['mieru', 'anytls', 'tuic', 'hysteria2']) ? {
+		] : (cfg.type in ['mieru', 'anytls', 'tuic', 'hysteria2']) ? {
 			/* Mieru / AnyTLS / Hysteria2 */
 			...arrToObj([[cfg.username, cfg.password]]),
 
 			/* Tuic */
 			...arrToObj([[cfg.uuid, cfg.password]])
-		} : null),
+		} : null,
 
 		/* Shadowsocks */
 		cipher: cfg.shadowsocks_chipher,
@@ -252,6 +273,7 @@ export function parseListener(cfg) {
 		transport: cfg.mieru_transport,
 		"traffic-pattern": cfg.mieru_traffic_pattern,
 		"user-hint-is-mandatory": strToBool(cfg.mieru_user_hint_is_mandatory),
+		"tcp-idle-timeout": durationToSecond(cfg.mieru_tcp_idle_timeout),
 
 		/* Sudoku */
 		key: cfg.sudoku_key,
@@ -274,6 +296,7 @@ export function parseListener(cfg) {
 		/* Snell */
 		psk: cfg.snell_psk,
 		version: cfg.snell_version,
+		mode: cfg.snell_mode,
 
 		/* VMess / VLESS */
 		decryption: cfg.vless_decryption === '1' ? parseVlessEncryption(cfg.vless_encryption_hmpayload, 'server') : null,
@@ -309,13 +332,15 @@ export function parseListener(cfg) {
 			token: cfg.hysteria2_realm_token,
 			"realm-id": cfg.hysteria2_realm_id,
 			"stun-servers": cfg.hysteria2_realm_stun_servers,
-			// @TLS of server-url
-			//sni,
-			//alpn,
-			//"skip-cert-verify",
-			//fingerprint,
-			//certificate,
-			//"private-key"
+			// TLS of server-url
+			sni: cfg.hysteria2_realm_sni,
+			alpn: cfg.hysteria2_realm_alpn,
+			fingerprint: cfg.hysteria2_realm_fingerprint,
+			"name-cert-verify": cfg.hysteria2_realm_name_cert_verify,
+			"skip-cert-verify": strToBool(cfg.hysteria2_realm_skip_cert_verify),
+			certificate: cfg.hysteria2_realm_cert_path, // mTLS
+			"private-key": cfg.hysteria2_realm_key_path, // mTLS
+			proxy: proxyResolver(cfg.hysteria2_realm_proxy)
 		} : null,
 
 		/* Hysteria2 Realmserver */
@@ -339,9 +364,8 @@ export function parseListener(cfg) {
 		"jls-upstream": cfg.type === 'shadowquic' ? {
 			addr: cfg.plugin_opts_handshake_dest,
 			sni: cfg.plugin_opts_host,
-			proxy: cfg.plugin_opts_dest_proxy, // raw data need post-processing
-			"rate-limit": strToInt(cfg.plugin_opts_rate_limit),
-			"quic-version-probe": strToBool(cfg.plugin_opts_quic_version_probe)
+			proxy: proxyResolver(cfg.plugin_opts_dest_proxy),
+			"rate-limit": strToInt(cfg.plugin_opts_rate_limit)
 		} : null,
 		cwnd: strToInt(cfg.shadowquic_cwnd),
 		"max-datagram-frame-size": strToInt(cfg.shadowquic_max_datagram_frame_size),
@@ -394,7 +418,7 @@ export function parseListener(cfg) {
 					} : { password: cfg.plugin_opts_thetlspassword }),
 					handshake: {
 						dest: cfg.plugin_opts_handshake_dest,
-						proxy: cfg.plugin_opts_dest_proxy // raw data need post-processing
+						proxy: proxyResolver(cfg.plugin_opts_dest_proxy)
 					}
 				}
 			} : cfg.plugin_type === 'restls' ? {
@@ -405,7 +429,7 @@ export function parseListener(cfg) {
 					password: cfg.plugin_opts_thetlspassword,
 					"restls-script": cfg.plugin_opts_restls_script,
 					//"min-record-len": 0,
-					proxy: cfg.plugin_opts_dest_proxy, // raw data need post-processing
+					proxy: proxyResolver(cfg.plugin_opts_dest_proxy),
 					"rate-limit": strToInt(cfg.plugin_opts_rate_limit)
 				}
 			} : cfg.plugin_type === 'jls' ? {
@@ -421,7 +445,7 @@ export function parseListener(cfg) {
 					dest: cfg.plugin_opts_handshake_dest,
 					sni: cfg.plugin_opts_host,
 					alpn: cfg.tls_alpn,
-					proxy: cfg.plugin_opts_dest_proxy, // raw data need post-processing
+					proxy: proxyResolver(cfg.plugin_opts_dest_proxy),
 					"rate-limit": strToInt(cfg.plugin_opts_rate_limit)
 				}
 			} : {}
@@ -435,7 +459,9 @@ export function parseListener(cfg) {
 					dest: cfg.tls_reality_dest,
 					"private-key": cfg.tls_reality_private_key,
 					"short-id": cfg.tls_reality_short_id,
-					"server-names": cfg.tls_reality_server_names
+					"server-names": cfg.tls_reality_server_names,
+					"max-time-difference": strToInt(cfg.tls_reality_max_time_difference),
+					proxy: proxyResolver(cfg.plugin_opts_dest_proxy),
 				}
 			} : {
 				certificate: cfg.tls_cert_path,

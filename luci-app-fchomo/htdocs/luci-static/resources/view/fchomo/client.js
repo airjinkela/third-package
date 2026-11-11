@@ -137,9 +137,9 @@ class RulesEntry {
 			Object.keys(content).forEach(key => this[key] = content[key]);
 		} catch {}
 
-		this.type ||= hm.rules_type[0][0];
+		this.type ||= hm.rules_type[0].types[0][0];
 		this.payload ||= [
-			{type: hm.rules_type[0][0], factor: '', /* deny: false */},
+			{type: hm.rules_type[0].types[0][0], factor: '', /* deny: false */},
 			//{type: 'DOMAIN-SUFFIX', factor: '.google.com', deny: true}
 		];
 		this.detour ||= hm.preset_outbound.full[0][0];
@@ -204,18 +204,17 @@ class RulesEntry {
 
 		if (rule.subrule)
 			return 'SUB-RULE,(%s),%s'.format(payload, rule.subrule);
+		else if (rule.type === 'MATCH')
+			return [rule.type, rule.detour].join(',');
 		else
-			if (rule.type === 'MATCH')
-				return [rule.type, rule.detour].join(',');
-			else
-				return [payload, rule.detour].concat(
-					rule.params ? ['no-resolve', 'src'].filter(k => rule.params[k]) : []
-				).join(',');
+			return [payload, rule.detour].concat(
+				rule.params ? ['no-resolve', 'src'].filter(k => rule.params[k]) : []
+			).join(',');
 	}
 
 	toString(format) {
 		format ||= 'json';
-		let logical = hm.rules_logical_type.map(e => e[0] || e).includes(this.type);
+		let logical = hm.rules_logical_type.types.map(e => e[0] || e).includes(this.type);
 		let rule, factor, detour, params;
 
 		if (logical) {
@@ -380,7 +379,7 @@ const parseRulesYaml = hm.parseYaml.extend({
 				return null;
 		}
 
-		if (hm.rules_logical_type.map(e => e[0] || e).includes(tp)) {
+		if (hm.rules_logical_type.types.map(e => e[0] || e).includes(tp)) {
 			logical_payload = payload.match(/^\(\((.*)\)\)$/); // LOGIC_TYPE,((payload1),(payload2),(payload3)),DIRECT
 			if (logical_payload)
 				logical_payload = logical_payload[1].split('),(');
@@ -404,13 +403,23 @@ const parseRulesYaml = hm.parseYaml.extend({
 				else
 					[type, factor] = logical_payload[i].split(',');
 
-				if (type === 'RULE-SET')
+				if (type === 'IN-TYPE') {
+					factor = factor.toLowerCase(); // Multi-values are not supported in Factor ++
+					//factor = factor.replace(/\/.*/, '').toLowerCase();
+				} else if (type === 'IN-NAME')
+					factor = this.calcID(hm.glossary["inbound"].field, factor);
+				else if (type === 'RULE-SET')
 					factor = this.calcID(hm.glossary["ruleset"].field, factor);
 
 				entry.setPayload(i, {type: type.toUpperCase(), factor: factor, deny: deny ? true : null});
 			}
 		else if (payload)
-			if (tp === 'RULE-SET')
+			if (tp === 'IN-TYPE') {
+				entry.setPayload(0, {factor: payload.toLowerCase()}); // Multi-values are not supported in Factor ++
+				// entry.setPayload(0, {factor: payload.replace(/\/.*/, '').toLowerCase()});
+			} else if (tp === 'IN-NAME')
+				entry.setPayload(0, {factor: this.calcID(hm.glossary["inbound"].field, payload)});
+			else if (tp === 'RULE-SET')
 				entry.setPayload(0, {factor: this.calcID(hm.glossary["ruleset"].field, payload)});
 			else
 				entry.setPayload(0, {factor: payload});
@@ -429,7 +438,7 @@ const parseRulesYaml = hm.parseYaml.extend({
 
 	parseRules(line) {
 		// parse rules
-		// https://github.com/muink/mihomo/blob/ad730ae9744971dfaa75bda20cfc2ffe07eeb59d/config/config.go#L1090-L1118
+		// https://github.com/muink/mihomo/blob/63bd52ec794b7051569b76ede2f6cdbf4c091fda/config/config.go#L1102-L1130
 		let [tp, payload, target, params] = this.ParseRulePayload(line, true);
 		if (!target)
 			return null; // error: format invalid
@@ -530,11 +539,11 @@ function renderPayload(s, total, uciconfig) {
 	for (let n=0; n<total; n++) {
 		prefix = `payload${n}_`;
 
-		o = s.option(form.ListValue, prefix + 'type', _('Type') + ` ${n+1}`);
-		o.default = hm.rules_type[0][0];
-		hm.rules_type.forEach((res) => {
-			o.value.apply(o, res);
-		})
+		o = s.option(hm.GroupListValue, prefix + 'type', _('Type') + ` ${n+1}`);
+		o.default = hm.rules_type[0].types[0][0];
+		for (const {label, types} of hm.rules_type) {
+			types.forEach((res) => o.value.call(o, res, label));
+		}
 		Object.keys(hm.rules_logical_payload_count).forEach((key) => {
 			if (n < hm.rules_logical_payload_count[key].low)
 				o.depends('type', key);
@@ -563,6 +572,71 @@ function renderPayload(s, total, uciconfig) {
 		o.depends(Object.fromEntries([[prefix + 'type', /\bPROCESS\b/]]));
 		initPayload(o, n, 'factor', uciconfig);
 
+		o = s.option(form.Value, prefix + 'ip', _('Factor') + ` ${n+1}`);
+		o.datatype = 'cidr';
+		if (n === 0) {
+			o.depends({type: /\bCIDR6?\b/});
+			o.depends({type: /\bIP-SUFFIX\b/});
+		}
+		o.depends(Object.fromEntries([[prefix + 'type', /\bCIDR6?\b/]]));
+		o.depends(Object.fromEntries([[prefix + 'type', /\bIP-SUFFIX\b/]]));
+		initPayload(o, n, 'factor', uciconfig);
+
+		o = s.option(form.Value, prefix + 'port', _('Factor') + ` ${n+1}`);
+		//o.datatype = 'or(port, portrange)'; // ⬇️ migrated to validate
+		o.placeholder = '1080/2079-2080/3080';
+		if (n === 0)
+			o.depends({type: /\bPORT\b/});
+		o.depends(Object.fromEntries([[prefix + 'type', /\bPORT\b/]]));
+		initPayload(o, n, 'factor', uciconfig);
+		// if validate is already defined in initPayload
+		const port_old_validate = o.validate;
+		o.validate = function(section_id, value) {
+			const result = port_old_validate.apply(this, arguments);
+
+			if (result === true) {
+				this.hm_separator = '/';
+				return hm.validateCommonPort.apply(this, arguments);
+			}
+			return result;
+		}
+
+		o = s.option(form.MultiValue, prefix + 'intype', _('Factor') + ` ${n+1}`);
+		hm.inbound_type.forEach((res) => {
+			o.value.apply(o, res);
+		})
+		if (n === 0)
+			o.depends('type', 'IN-TYPE');
+		o.depends(prefix + 'type', 'IN-TYPE');
+		initPayload(o, n, 'factor', uciconfig);
+		o.load = L.bind(function(n, key, uciconfig, section_id) {
+			return (new RulesEntry(uci.get(uciconfig, section_id, 'entry')).getPayload(n)[key] || '')
+				.split('/');
+		}, o, n, 'factor', uciconfig)
+		o.onchange = function(ev, section_id, value) {
+			let UIEl = this.section.getUIElement(section_id, 'entry');
+
+			let n = this.option.match(/^payload(\d+)_/)[1];
+			let rule = new RulesEntry(UIEl.getValue()).setPayload(n, {factor: value.join('/')});
+
+			UIEl.node.previousSibling.innerText = rule.toString('mihomo');
+			UIEl.setValue(rule.toString('json'));
+		}
+
+		o = s.option(form.ListValue, prefix + 'inname', _('Factor') + ` ${n+1}`);
+		if (n === 0)
+			o.depends('type', 'IN-NAME');
+		o.depends(prefix + 'type', 'IN-NAME');
+		initPayload(o, n, 'factor', uciconfig);
+		o.load = L.bind(function(n, key, uciconfig, section_id) {
+			hm.loadLabel.call(this, [
+				['', _('-- Please choose --')],
+				...hm.loadLabelValues(this.config, 'inbound')
+			], section_id);
+
+			return new RulesEntry(uci.get(uciconfig, section_id, 'entry')).getPayload(n)[key];
+		}, o, n, 'factor', uciconfig)
+
 		o = s.option(form.ListValue, prefix + 'rematchname', _('Factor') + ` ${n+1}`);
 		if (n === 0)
 			o.depends('type', 'REMATCH-NAME');
@@ -582,23 +656,6 @@ function renderPayload(s, total, uciconfig) {
 		if (n === 0)
 			o.depends('type', 'UID');
 		o.depends(prefix + 'type', 'UID');
-		initPayload(o, n, 'factor', uciconfig);
-
-		o = s.option(form.Value, prefix + 'ip', _('Factor') + ` ${n+1}`);
-		o.datatype = 'cidr';
-		if (n === 0) {
-			o.depends({type: /\bCIDR6?\b/});
-			o.depends({type: /\bIP-SUFFIX\b/});
-		}
-		o.depends(Object.fromEntries([[prefix + 'type', /\bCIDR6?\b/]]));
-		o.depends(Object.fromEntries([[prefix + 'type', /\bIP-SUFFIX\b/]]));
-		initPayload(o, n, 'factor', uciconfig);
-
-		o = s.option(form.Value, prefix + 'port', _('Factor') + ` ${n+1}`);
-		o.datatype = 'or(port, portrange)';
-		if (n === 0)
-			o.depends({type: /\bPORT\b/});
-		o.depends(Object.fromEntries([[prefix + 'type', /\bPORT\b/]]));
 		initPayload(o, n, 'factor', uciconfig);
 
 		o = s.option(form.ListValue, prefix + 'l4', _('Factor') + ` ${n+1}`);
@@ -657,11 +714,10 @@ function renderPayload(s, total, uciconfig) {
 	Object.keys(extenbox).forEach((n) => {
 		prefix = `payload${n}_`;
 
-		o = s.option(hm.StaticList, prefix + 'type', _('Type') + ' ++');
-		o.default = hm.rules_type[0][0];
-		hm.rules_type.forEach((res) => {
-			o.value.apply(o, res);
-		})
+		o = s.option(hm.GroupStaticList, prefix + 'type', _('Type') + ' ++');
+		for (const {label, types} of hm.rules_type) {
+			types.forEach((res) => o.value.call(o, res, label));
+		}
 		extenbox[n].forEach((type) => {
 			o.depends('type', type);
 		})
@@ -683,7 +739,7 @@ function renderPayload(s, total, uciconfig) {
 			return true;
 		}
 
-		o = s.option(hm.less_25_12 ? hm.DynamicList : form.DynamicList, prefix + 'fused', _('Factor') + ' ++', // @less_25_12
+		o = s.option(hm.GroupDynamicList, prefix + 'fused', _('Factor') + ' ++',
 			_('Content will not be verified, Please make sure you enter it correctly.'));
 		extenbox[n].forEach((type) => {
 			o.depends(Object.fromEntries([['type', type], [prefix + 'type', /.+/]]));
@@ -691,13 +747,12 @@ function renderPayload(s, total, uciconfig) {
 		initDynamicPayload(o, n, 'factor', uciconfig);
 		o.load = L.bind(function(n, key, uciconfig, section_id) {
 			hm.loadLabel.call(this, [
-				['REMATCHNAME', _('-- REMATCH-NAME --')],
-				...hm.loadLabelValues(this.config, 'rematch-name'),
-				['NETWORK', _('-- NETWORK --')],
-				['udp', _('UDP')],
-				['tcp', _('TCP')],
-				['RULESET', _('-- RULE-SET --')],
-				...hm.loadLabelValues(this.config, 'ruleset')
+				...hm.inbound_type.map(e => [e, _('IN-TYPE')]), // Multi-values are not supported
+				...hm.loadLabelValues(this.config, 'inbound').map(e => [e, _('IN-NAME')]),
+				...hm.loadLabelValues(this.config, 'rematch-name').map(e => [e, _('REMATCH-NAME')]),
+				[['udp', _('UDP')], _('NETWORK')],
+				[['tcp', _('TCP')], _('NETWORK')],
+				...hm.loadLabelValues(this.config, 'ruleset').map(e => [e, _('RULE-SET')])
 			], section_id);
 
 			return new RulesEntry(uci.get(uciconfig, section_id, 'entry')).getPayloads().slice(n).map(e => e[key] ?? '');
@@ -752,11 +807,11 @@ function renderRules(s, uciconfig) {
 	o.remove = form.AbstractValue.prototype.remove;
 	o.editable = true;
 
-	o = s.option(form.ListValue, 'type', _('Type'));
-	o.default = hm.rules_type[0][0];
-	[...hm.rules_type, ...hm.rules_logical_type].forEach((res) => {
-		o.value.apply(o, res);
-	})
+	o = s.option(hm.GroupListValue, 'type', _('Type'));
+	o.default = hm.rules_type[0].types[0][0];
+	for (const {label, types} of hm.rules_type.concat(hm.rules_logical_type)) {
+		types.forEach((res) => o.value.call(o, res, label));
+	}
 	o.load = function(section_id) {
 		return new RulesEntry(uci.get(uciconfig, section_id, 'entry')).type;
 	}
@@ -1298,6 +1353,10 @@ return view.extend({
 							'- SRC-IP-SUFFIX,192.168.1.201/8,DIRECT\n' +
 							'- DST-PORT,80,DIRECT\n' +
 							'- SRC-PORT,7777,DIRECT\n' +
+							'- IN-PORT,7890/7893,GLOBAL\n' +
+							'- IN-TYPE,SOCKS/HTTP,GLOBAL\n' +
+							'- IN-NAME,ss,GLOBAL\n' +
+							'- REMATCH-NAME,rematch1,GLOBAL\n' +
 							'- PROCESS-PATH,/usr/bin/wget,auto\n' +
 							'- PROCESS-PATH-WILDCARD,/usr/*/wget,GLOBAL\n' +
 							'- PROCESS-PATH-REGEX,.*bin/wget,auto\n' +
@@ -1919,7 +1978,7 @@ return view.extend({
 			_('Lazy query.'));
 		so.default = so.disabled;
 		so.validate = function(section_id, value) {
-			let desc = this.getUIElement(section_id).node.nextSibling;
+			const desc = this.getUIElement(section_id).node.nextSibling;
 			value = this.formvalue(section_id);
 
 			if (value == 1)

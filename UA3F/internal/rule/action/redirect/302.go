@@ -33,8 +33,12 @@ func (r *Redirect302) Execute(metadata *common.Metadata) (bool, error) {
 
 	response := fmt.Sprintf("HTTP/1.1 302 Found\r\n"+
 		"Location: %s\r\n"+
+		"Content-Length: 0\r\n"+
 		"\r\n", url)
 
+	if metadata.ConnLink == nil || metadata.ConnLink.LConn == nil {
+		return false, fmt.Errorf("redirect client connection is nil")
+	}
 	_, err = metadata.ConnLink.LConn.Write([]byte(response))
 
 	return false, err

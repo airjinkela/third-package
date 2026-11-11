@@ -1,4 +1,5 @@
 local http = require "luci.http"
+local string = require "string"
 
 module("luci.controller.quickstart", package.seeall)
 
@@ -25,6 +26,9 @@ function index()
     else
         entry({"admin", "quickstart"}, call("redirect_fallback")).leaf = true
     end
+    if not nixio.fs.access("/usr/share/luci/menu.d/luci-app-dockerman.json") then
+        entry({"admin", "services", "dockerman"}, call("redirect_dockerman")).leaf = true
+    end
 end
 
 function networkguide_index()
@@ -37,6 +41,24 @@ end
 
 function redirect_fallback()
     luci.http.redirect(luci.dispatcher.build_url("admin", "status"))
+end
+
+local function starts_with(str, start)
+    return string.sub(str, 1, #start) == start
+end
+
+local function replace_first(str, pattern, replacement)
+    -- The third argument (1) limits the replacement to the first match
+    local result = str:gsub(pattern, replacement, 1)
+    return result
+end
+
+function redirect_dockerman(path, ...)
+    local newargs = {}
+    if path ~= nil then
+        newargs = {path == "configuration" and "config" or path, ...}
+    end
+    luci.http.redirect(luci.dispatcher.build_url("admin", "docker", unpack(newargs)))
 end
 
 local function vue_lang()
@@ -73,14 +95,30 @@ function auto_setup()
     -- form style
     local packages = luci.http.formvalue("packages")
     local pkgs = ""
+    local function valid_package(value)
+        return type(value) == "string" and #value <= 128 and
+            value:match("^[%w][%w%.%+_%-]*$") ~= nil
+    end
+    local function invalid_package()
+        luci.http.prepare_content("application/json")
+        luci.http.write_json({success=1, scope="params", error="Invalid package name"})
+    end
     if type(packages) == "table" then
         if #packages > 0 then
             for k, v in pairs(packages) do
+                if not valid_package(v) then
+                    invalid_package()
+                    return
+                end
                 pkgs = pkgs .. " " .. luci.util.shellquote(v)
             end
         end
     else
         if packages ~= nil and packages ~= "" then
+            if not valid_package(packages) then
+                invalid_package()
+                return
+            end
             pkgs = luci.util.shellquote(packages)
         end
     end

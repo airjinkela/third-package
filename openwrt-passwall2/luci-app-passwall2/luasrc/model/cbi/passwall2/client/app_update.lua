@@ -1,27 +1,31 @@
 local api = require "luci.passwall2.api"
-local com = require "luci.passwall2.com"
-local appname = api.appname
-
 api.set_default_cbi()
 
-m = Map(appname)
-api.set_apply_on_parse(m)
+local com = require "luci.passwall2.com"
+
+m = Map()
 
 -- [[ App Settings ]]--
-s = m:section(TypedSection, "global_app", translate("App Update"))
-s.anonymous = true
+s = m:section(NamedSection, "@global_app[0]", "global_app", translate("App Update"))
 
-local app_version = Template(appname .. "/app_update/app_version")
-app_version.api = api
-app_version.config = m.config
-app_version.com = com
-s:append(app_version)
+s:appendTemplate("/app_update/app_version", {com = com})
 
-local k, v
-for k, v in pairs(com) do
+o = s:option(ListValue, "gh_proxy_url", translate("GitHub Proxy"), translate("Use GitHub instead of proxy nodes for component updates."))
+o.default = ""
+o:value("", translate("Close(Not use)"))
+o:value("https://gh-proxy.org/", "gh-proxy.org")
+o:value("https://ghproxy.cc/", "ghproxy.cc")
+o:value("https://mirror.ghproxy.com/", "ghproxy.com")
+o:value("https://ghfast.top/", "ghfast.top")
+
+for _, k in ipairs(com.order) do
+	local v = com[k]
 	o = s:option(Value, k:gsub("%-","_") .. "_file", translatef("%s App Path", v.name))
 	o.default = v.default_path or ("/usr/bin/" .. k)
-	o.rmempty = false
+	o.placeholder = o.default
+	function o:remove(section)
+		self:write(section, self.default)
+	end
 end
 
 o = s:option(DummyValue, "tips", " ")

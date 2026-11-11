@@ -118,8 +118,8 @@ curl http://127.0.0.1:9000/config
   },
   "Desync": {
     "Reorder": false,
-    "ReorderBytes": 8,
-    "ReorderPackets": 1500,
+    "ReorderBytes": 1500,
+    "ReorderPackets": 8,
     "Inject": false,
     "InjectTTL": 3,
     "DesyncPorts": ""
@@ -181,7 +181,7 @@ curl http://127.0.0.1:9000/rules
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `enabled` | bool | 规则是否启用 |
+| `enabled` | bool | 规则是否启用，省略时默认 `true` |
 | `type` | string | 匹配类型，可选值：`HEADER-KEYWORD`、`HEADER-REGEX`、`DEST-PORT`、`IP-CIDR`、`SRC-IP`、`DOMAIN-SUFFIX`、`DOMAIN-KEYWORD`、`DOMAIN`、`URL-REGEX`、`FINAL` |
 | `match_header` | string | 匹配的 Header 名称（`HEADER-KEYWORD` / `HEADER-REGEX` 类型必填） |
 | `match_value` | string | 匹配的值 |

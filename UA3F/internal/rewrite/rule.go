@@ -44,7 +44,7 @@ func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *comm
 			break
 		}
 	}
-	if decision.Action == action.RejectRequestAction {
+	if decision.Action == action.RejectRequestAction || decision.Action == action.DropRequestAction {
 		return
 	}
 
@@ -56,8 +56,7 @@ func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *comm
 	for {
 		matchedRule, index = r.HeaderRuleEngine.MatchWithRuleIndex(metadata, index+1, common.DirectionRequest)
 		if matchedRule == nil {
-			_, _ = decision.Action.Execute(metadata)
-			return
+			break
 		}
 		decision.MatchedRule = matchedRule
 		decision.Action = matchedRule.Action()
@@ -70,7 +69,7 @@ func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *comm
 			break
 		}
 	}
-	if decision.Action == action.RejectRequestAction {
+	if decision.Action == action.RejectRequestAction || decision.Action == action.DropRequestAction {
 		return
 	}
 
@@ -92,7 +91,12 @@ func (r *RuleRewriter) RewriteRequest(metadata *common.Metadata) (decision *comm
 			log.LogErrorWithAddr(metadata.SrcAddr(), metadata.DestAddr(), fmt.Sprintf("decision.Action.Execute: %s", err.Error()))
 			return
 		}
-		decision.Redirect = contine
+		switch decision.Action.Type() {
+		case common.ActionRedirect302, common.ActionRedirect307, common.ActionRedirectHeader:
+			// Terminal redirect actions have already written a client response.
+			// In-place URL changes keep forwarding the rewritten request.
+			decision.Redirect = !contine
+		}
 		if !contine {
 			break
 		}

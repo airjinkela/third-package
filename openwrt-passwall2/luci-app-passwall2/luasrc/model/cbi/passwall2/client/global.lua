@@ -1,15 +1,12 @@
 api = require "luci.passwall2.api"
-appname = api.appname
 datatypes = api.datatypes
 has_singbox = api.finded_com("sing-box")
 has_xray = api.finded_com("xray")
-
 api.set_default_cbi()
 
-m = Map(appname)
-api.set_apply_on_parse(m)
+m = Map()
 
-m:append(Template(appname .. "/cbi/nodes_listvalue_com"))
+m:appendTemplate("/cbi/nodes_listvalue_com")
 
 nodes_table = {}
 for k, e in ipairs(api.get_valid_nodes()) do
@@ -40,10 +37,10 @@ for k, v in pairs(nodes_table) do
 end
 
 local socks_list = {}
-m.uci:foreach(appname, "socks", function(s)
+m:foreach("socks", function(s)
 	if s.enabled == "1" and s.node then
 		socks_list[#socks_list + 1] = {
-			id = "Socks_" .. s[".name"],
+			id = s[".name"],
 			remark = translate("Socks Config") .. " [" .. s.port .. translate("Port") .. "]",
 			group = "Socks"
 		}
@@ -72,13 +69,9 @@ local doh_validate = function(self, value, t)
 	return nil, translate("DoH request address") .. " " .. translate("Format must be:") .. " URL,IP"
 end
 
-m:append(Template(appname .. "/global/status"))
+m:appendTemplate("/global/status")
 
-global_cfgid = (m:get("@global[0]") or {})[".name"] or ""
-
-s = m:section(TypedSection, "global")
-s.anonymous = true
-s.addremove = false
+s = m:section(NamedSection, "@global[0]", "global")
 
 s:tab("Main", translate("Main"))
 
@@ -88,12 +81,26 @@ o.rmempty = false
 
 ---- Node
 o = s:taboption("Main", ListValue, "node", "<a style='color: red'>" .. translate("Node") .. "</a>")
-o.template = appname .. "/cbi/nodes_listvalue"
+o.template = m:template_path("/cbi/nodes_listvalue")
 o:value("", translate("Close"))
 o.group = {""}
 
-current_node_id = m.uci:get(appname, global_cfgid, "node")
-current_node = current_node_id and m.uci:get_all(appname, current_node_id) or {}
+o = s:taboption("Main", HideValue, "_node")
+o:depends({ node = "",  ['!reverse'] = true })
+
+o = s:taboption("Main", HideValue, "_is_singbox")
+o:depends("_hide", "1")
+
+current_node_id = m:get(s.section, "node")
+local node_value = s.fields["node"]:formvalue(s.section)
+if node_value then
+	current_node_id = node_value
+end
+current_node = current_node_id and m:get(current_node_id) or {}
+
+o = s:taboption("Main", HideValue, "node_save_before")
+o.value = current_node[".name"]
+o.cbid = function(self, section) return "node_save_before" end
 
 -- Shunt Start
 if (has_singbox or has_xray) and #nodes_table > 0 then
@@ -101,16 +108,10 @@ if (has_singbox or has_xray) and #nodes_table > 0 then
 		if current_node.protocol == "_shunt" then
 			local shunt_lua = loadfile("/usr/lib/lua/luci/model/cbi/passwall2/client/include/shunt_options.lua")
 			setfenv(shunt_lua, getfenv(1))(m, s, {
-				node_id = current_node_id,
 				node = current_node,
-				socks_list = socks_list,
-				urltest_list = urltest_list,
-				balancing_list = balancing_list,
-				iface_list = iface_list,
-				normal_list = normal_list,
 				verify_option = s.fields["node"],
 				tab = "Shunt",
-				tab_desc = translate("Shunt Rule")
+				tab_desc = translate("Shunt Rule"),
 			})
 		end
 	else
@@ -119,7 +120,7 @@ if (has_singbox or has_xray) and #nodes_table > 0 then
 		tips.cfgvalue = function(t, n)
 			return string.format('<a style="color: red">%s</a>', translate("There are no available nodes, please add or subscribe nodes first."))
 		end
-		tips:depends({ node = "", ["!reverse"] = true })
+		tips:depends("_node", "1")
 		for k, v in pairs(shunt_list) do
 			tips:depends("node", v.id)
 		end
@@ -163,25 +164,29 @@ end
 node_socks_port = s:taboption("Main", Value, "node_socks_port", translate("Node") .. " Socks " .. translate("Listen Port"))
 node_socks_port.default = 1070
 node_socks_port.datatype = "port"
+node_socks_port:depends("_node", "1")
 
 node_socks_bind_local = s:taboption("Main", Flag, "node_socks_bind_local", translate("Node") .. " Socks " .. translate("Bind Local"), translate("When selected, it can only be accessed localhost."))
 node_socks_bind_local.default = "1"
-node_socks_bind_local:depends({ node = "", ["!reverse"] = true })
+node_socks_bind_local:depends("_node", "1")
 
 s:tab("DNS", translate("DNS"))
 
-o = s:taboption("DNS", TextValue, "direct_dns_shunt", translate("Direct domain DNS routing"))
-o.description = "<br /><ul>"
-.. "<li>" .. translate("Subdomain (recommended): Begining with 'domain:' and the rest is a domain. When the targeting domain is exactly the value, or is a subdomain of the value, this rule takes effect. Example: rule 'domain:v2ray.com' matches 'www.v2ray.com', 'v2ray.com', but not 'xv2ray.com'.") .. "</li>"
-.. "<li>" .. translate("Full domain: Begining with 'full:' and the rest is a domain. When the targeting domain is exactly the value, the rule takes effect. Example: rule 'domain:v2ray.com' matches 'v2ray.com', but not 'www.v2ray.com'.") .. "</li>"
-.. "<li>" .. translate("Such as:") .. "</li>"
-.. "<li>" .. "domain:my-nodes.com tcp://223.5.5.5" .. "</li>"
-.. "<li>" .. "domain:vpn.com udp://119.29.29.29:53" .. "</li>"
-.. "<li>" .. "full:www.dnspod.com https://120.53.53.53/dns-query" .. "</li>"
-.. "<li>" .. '<a style="color:red">' .. translate("Please note that the program will not start if the format is incorrect!") .. '</a>' .. "</li>"
-.. "</ul>"
-o.rows = 3
-o.wrap = "off"
+o = s:taboption("DNS", ListValue, "direct_dns_protocol", translate("Direct DNS Protocol"))
+o:value("", translate("Auto"))
+--o:value("tcp", "TCP")
+o:value("udp", "UDP")
+
+o = s:taboption("DNS", Value, "direct_dns", translate("Direct DNS"))
+o.datatype = "or(ipaddr,ipaddrport(1))"
+o.default = "223.5.5.5"
+o:value("223.5.5.5")
+o:value("223.6.6.6")
+o:value("114.114.114.114")
+o:value("119.29.29.29")
+o:value("180.76.76.76")
+o:depends("direct_dns_protocol", "tcp")
+o:depends("direct_dns_protocol", "udp")
 
 o = s:taboption("DNS", ListValue, "direct_dns_query_strategy", translate("Direct Query Strategy"))
 o.default = "UseIP"
@@ -193,15 +198,21 @@ o = s:taboption("DNS", ListValue, "remote_dns_protocol", translate("Remote DNS P
 o:value("tcp", "TCP")
 o:value("doh", "DoH")
 o:value("udp", "UDP")
-if current_node.type == "sing-box" then
-	o:value("tls", "TLS(DoT)")
-	o:value("quic", "QUIC(DoQ)")
-	o:value("http3", "HTTP3(DoH3)")
+if m.is_js_luci then
+	if current_node.type == "sing-box" then
+		o:value("tls", "TLS(DoT)")
+		o:value("quic", "QUIC(DoQ)")
+		o:value("http3", "HTTP3(DoH3)")
+	end
+else
+	o:value("tls", "TLS(DoT)", { _is_singbox = "1" })
+	o:value("quic", "QUIC(DoQ)", { _is_singbox = "1" })
+	o:value("http3", "HTTP3(DoH3)", { _is_singbox = "1" })
 end
 
 ---- DNS over TCP or UDP or TLS (DoT) or QUIC (DoQ)
 o = s:taboption("DNS", Value, "remote_dns", translate("Remote DNS"))
-o.datatype = "or(ipaddr,ipaddrport)"
+o.datatype = "or(ipaddr,ipaddrport(1))"
 o.default = "1.1.1.1"
 o:value("1.1.1.1", "1.1.1.1 (CloudFlare)")
 o:value("1.1.1.2", "1.1.1.2 (CloudFlare-Security)")
@@ -253,11 +264,16 @@ o:value("UseIP")
 o:value("UseIPv4")
 o:value("UseIPv6")
 
+o = s:taboption("DNS", Value, "remote_rewrite_ttl", translate("Remote DNS") .. " TTL")
+o.datatype = "min(1)"
+o.default = "30"
+o:depends("_is_singbox", "1")
+
 o = s:taboption("DNS", TextValue, "dns_hosts", translate("Domain Override"))
 o.rows = 5
 o.wrap = "off"
 o.remove = function(self, section)
-	local node_value = s.fields["node"]:formvalue(global_cfgid)
+	local node_value = s.fields["node"]:formvalue(section)
 	if node_value then
 		local node_t = m:get(node_value) or {}
 		if node_t.type == "Xray" or node_t.type == "sing-box" then
@@ -286,20 +302,36 @@ o.default = "1"
 o.rmempty = false
 
 loglevel = s:taboption("log", ListValue, "loglevel", translate("Log Level"))
-loglevel.default = "warning"
+loglevel.default = "warn"
 loglevel:value("debug")
 loglevel:value("info")
-loglevel:value("warning")
+loglevel:value("warn")
 loglevel:value("error")
+
+o = s:taboption("log", DummyValue, "_log", translate("Log File"))
+o.rawhtml = true
+o.cfgvalue = function(t, n)
+	local log_path = api.TMP_PATH .. "/acl/acl_default.log"
+	local log_url = api.url("get_redir_log") .. "?id=acl_default"
+	return string.format(
+		'<code>%s</code>&nbsp;&nbsp;<input class="btn cbi-button cbi-button-apply" type="button" value="%s" onclick="window.open(\'%s\', \'_blank\')" />',
+		log_path,
+		translate("View Log"),
+		log_url
+	)
+end
+o:depends("log_node", "1")
 
 s:tab("faq", "FAQ")
 
 o = s:taboption("faq", DummyValue, "")
-o.template = appname .. "/global/faq"
+o.template = m:template_path("/global/faq")
 
 s:tab("maintain", translate("Maintain"))
 o = s:taboption("maintain", DummyValue, "")
-o.template = appname .. "/global/backup"
+o.template = m:template_path("/global/backup")
+
+m:appendTemplate("/include/node_change", { verify_option = s.fields["node"], shunt_list = api.jsonc.stringify(shunt_list) })
 
 -- [[ Socks Server ]]--
 o = s:taboption("Main", Flag, "socks_enabled", "Socks " .. translate("Main switch"))
@@ -307,14 +339,14 @@ o.rmempty = false
 
 s2 = m:section(TypedSection, "socks", translate("Socks Config"))
 s2.template = "cbi/tblsection"
+s2.sortable = true
 s2.anonymous = true
 s2.addremove = true
 s2.extedit = api.url("socks_config", "%s")
 function s2.create(e, t)
-	local uuid = api.gen_short_uuid()
-	t = uuid
-	TypedSection.create(e, t)
-	luci.http.redirect(e.extedit:format(t))
+	local uid = "socks_" .. api.gen_random_char(5)
+	TypedSection.create(e, uid)
+	luci.http.redirect(e.extedit:format(uid))
 end
 
 o = s2:option(DummyValue, "status", translate("Status"))
@@ -329,13 +361,13 @@ o.default = 1
 o.rmempty = false
 
 o = s2:option(ListValue, "node", translate("Socks Node"))
-o.template = appname .. "/cbi/nodes_listvalue"
+o.template = m:template_path("/cbi/nodes_listvalue")
 o.group = {}
 
 o = s2:option(DummyValue, "now_node", translate("Current Node"))
 o.rawhtml = true
 o.cfgvalue = function(_, n)
-	local current_node = api.get_cache_var("socks_" .. n)
+	local current_node = api.get_cache_var(n)
 	if current_node then
 		local node = m:get(current_node)
 		if node then
@@ -345,7 +377,7 @@ o.cfgvalue = function(_, n)
 end
 
 local n = 1
-m.uci:foreach(appname, "socks", function(s)
+m:foreach("socks", function(s)
 	if s[".name"] == section then
 		return false
 	end
@@ -371,6 +403,9 @@ for k, v in pairs(nodes_table) do
 	if #normal_list == 0 and #iface_list == 0 then
 		break
 	end
+	if v.type == "sing-box" then
+		s.fields["_is_singbox"]:depends({ node = v.id })
+	end
 	o_node:value(v.id, v["remark"])
 	o_node.group[#o_node.group+1] = (v.group and v.group ~= "") and v.group or translate("default")
 	o_socks:value(v.id, v["remark"])
@@ -381,11 +416,8 @@ for k, v in pairs(nodes_table) do
 	end
 end
 
-local footer = Template(appname .. "/global/footer")
-footer.api = api
-footer.global_cfgid = global_cfgid
-footer.shunt_list = api.jsonc.stringify(shunt_list)
+m:appendTemplate("/global/footer")
 
-m:append(footer)
+m:appendTemplate("/cbi/sortable", {sectiontype = s2.sectiontype})
 
 return api.return_map(m)

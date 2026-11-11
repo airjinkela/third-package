@@ -163,7 +163,7 @@ return view.extend({
 		o.value('info', _('Info'));
 		o.value('warn', _('Warning'));
 		o.value('error', _('Error'));
-		o.default = 'info';
+		o.default = 'error';
 		o.depends('configfile', '/var/etc/mosdns.json');
 
 		o = s.taboption('basic', form.Value, 'log_file', _('Log File'));
@@ -171,6 +171,11 @@ return view.extend({
 		o.default = '/var/log/mosdns.log';
 		o.depends('configfile', '/var/etc/mosdns.json');
 		o.rmempty = false;
+
+		o = s.taboption('basic', form.Value, 'log_size', _('Log File Size'), _('Set the maximum size of the log file (in MB).'));
+		o.datatype = 'uinteger';
+		o.default = '1';
+		o.depends('configfile', '/var/etc/mosdns.json');
 
 		o = s.taboption('basic', form.Flag, 'redirect', _('DNS Forward'), _('Forward Dnsmasq Domain Name resolution requests to MosDNS'));
 		o.default = false;
@@ -320,6 +325,30 @@ return view.extend({
 		o.default = 86400;
 		o.depends('cache', '1');
 
+		o = s.taboption('advanced', form.Flag, 'prefetch', _('Cache Prefetching'),
+			_('Proactively refresh hot cache entries in the background before they expire.'));
+		o.rmempty = false;
+		o.default = false;
+		o.depends('cache', '1');
+
+		o = s.taboption('advanced', form.Value, 'prefetch_before_expire', _('Prefetch Before Expire'),
+			_('Prefetch when the remaining TTL is less than this value (in seconds).'));
+		o.datatype = 'and(uinteger,min(1))';
+		o.default = 10;
+		o.depends('prefetch', '1');
+
+		o = s.taboption('advanced', form.Value, 'prefetch_min_hits', _('Prefetch Min Hits'),
+			_('Minimum cache hits required since the last refresh to trigger a prefetch.'));
+		o.datatype = 'and(uinteger,min(1))';
+		o.default = 3;
+		o.depends('prefetch', '1');
+
+		o = s.taboption('advanced', form.Value, 'prefetch_scan_interval', _('Prefetch Scan Interval'),
+			_('Interval for the background thread to scan the cache for prefetching (in seconds).'));
+		o.datatype = 'and(uinteger,min(1))';
+		o.default = 5;
+		o.depends('prefetch', '1');
+
 		o = s.taboption('advanced', form.Flag, 'dump_file', _('Cache Dump'),
 			_('Save the cache locally and reload the cache dump on the next startup'));
 		o.rmempty = false;
@@ -396,6 +425,29 @@ return view.extend({
 		o.datatype = 'and(port,min(1))';
 		o.default = 52001;
 		o.depends('configfile', '/var/etc/mosdns.json');
+
+		o = s.taboption('api', form.Flag, 'stats_collector', _('Enable Stats Collector'));
+		o.rmempty = false;
+		o.default = o.enabled;
+		o.depends('configfile', '/var/etc/mosdns.json');
+
+		o = s.taboption('api', form.Value, 'stats_capacity', _('Ring Buffer Capacity'),
+			_('Query log ring buffer capacity (FIFO overwrite, default 2000, larger values consume more memory)'));
+		o.datatype = 'and(uinteger,min(1))';
+		o.default = 2000;
+		o.depends('stats_collector', '1');
+
+		o = s.taboption('api', form.Flag, 'stats_dump_file', _('Stats Dump'),
+			_('Save query statistics and logs locally and reload on next startup.'));
+		o.rmempty = false;
+		o.default = false;
+		o.depends('stats_collector', '1');
+
+		o = s.taboption('api', form.Value, 'stats_dump_interval',
+			_('Auto Save Stats Interval'));
+		o.datatype = 'and(uinteger,min(1))';
+		o.default = 600;
+		o.depends('stats_dump_file', '1');
 
 		o = s.taboption('api', form.Button, '_flush_cache', null,
 			_('Flushing DNS Cache will clear any IP addresses or DNS records from MosDNS cache.'));

@@ -1,15 +1,15 @@
 local api = require "luci.passwall2.api"
-local appname = api.appname
-local uci = api.uci
+api.set_default_cbi()
+
 local has_ss_rust = api.is_finded("sslocal")
 local has_singbox = api.finded_com("sing-box")
 local has_xray = api.finded_com("xray")
-local has_hysteria2 = api.finded_com("hysteria")
 local ss_type = {}
 local trojan_type = {}
 local vmess_type = {}
 local vless_type = {}
 local hysteria2_type = {}
+local other_type = {}
 local xray_version = api.get_app_version("xray")
 if has_ss_rust then
 	local s = "shadowsocks-rust"
@@ -22,6 +22,7 @@ if has_singbox then
 	table.insert(vmess_type, s)
 	table.insert(vless_type, s)
 	table.insert(hysteria2_type, s)
+	table.insert(other_type, s)
 end
 if has_xray then
 	local s = "xray"
@@ -29,29 +30,22 @@ if has_xray then
 	table.insert(ss_type, s)
 	table.insert(vmess_type, s)
 	table.insert(vless_type, s)
+	table.insert(other_type, s)
 	if api.compare_versions(xray_version, ">=", "26.1.13") then
 		table.insert(hysteria2_type, s)
 	end
 end
-if has_hysteria2 then
-	local s = "hysteria2"
-	table.insert(hysteria2_type, s)
-end
 
-api.set_default_cbi()
-
-m = Map(appname)
-api.set_apply_on_parse(m)
+m = Map()
 
 function m.on_before_save(self)
-	self.uci:foreach(appname, "subscribe_list", function(e)
+	self:foreach("subscribe_list", function(e)
 		self:del(e[".name"], "md5")
 	end)
 end
 
 -- [[ Subscribe Settings ]]--
-s = m:section(TypedSection, "global_subscribe", "")
-s.anonymous = true
+s = m:section(NamedSection, "@global_subscribe[0]", "global_subscribe")
 
 o = s:option(ListValue, "filter_keyword_mode", translate("Filter keyword Mode"))
 o:value("0", translate("Close"))
@@ -104,7 +98,15 @@ if #hysteria2_type > 0 then
 	end
 end
 
-if #ss_type > 0 or #trojan_type > 0 or #vmess_type > 0 or #vless_type > 0 or #hysteria2_type > 0 then
+if #other_type > 0 then
+	o = s:option(ListValue, "other_type", translatef("%s Node Use Type", translate("Other")))
+	o:value("", translate("Auto"))
+	for key, value in pairs(other_type) do
+		o:value(value)
+	end
+end
+
+if #ss_type > 0 or #trojan_type > 0 or #vmess_type > 0 or #vless_type > 0 or #hysteria2_type > 0 or #other_type > 0 then
 	o.description = string.format("<font color='red'>%s</font>",
 			translate("The configured type also applies to the core specified when manually importing nodes."))
 end
@@ -121,21 +123,23 @@ end
 o = s:option(DummyValue, "_update", translate("Manual subscription All"))
 o.rawhtml = true
 o.cfgvalue = function(self, section)
-    return string.format([[
-        <input type="button" class="btn cbi-button cbi-button-apply" onclick="ManualSubscribeAll()" value="%s" />]],
-	 translate("Manual subscription All"))
+	return string.format([[
+		<input type="button" class="btn cbi-button cbi-button-apply" onclick="ManualSubscribeAll()" value="%s" />]],
+		translate("Manual subscription All"))
 end
 
-local cfgname = "subscribe_list"
-s = m:section(TypedSection, cfgname, "", "<font color='red'>" .. translate("When adding a new subscription, please save and apply before manually subscribing. If you only change the subscription URL, you can subscribe manually, and the system will save it automatically.") .. "</font>")
+s = m:section(TypedSection, "subscribe_list", "", "<font color='red'>" .. translate("When adding a new subscription, please save and apply before manually subscribing. If you only change the subscription URL, you can subscribe manually, and the system will save it automatically.") .. "</font>")
 s.addremove = true
 s.anonymous = true
 s.sortable = true
 s.template = "cbi/tblsection"
 s.extedit = api.url("node_subscribe_config", "%s")
 function s.create(e, t)
-	local id = TypedSection.create(e, t)
-	luci.http.redirect(e.extedit:format(id))
+	local uid = "sub_" .. api.gen_random_char(5)
+	TypedSection.create(e, uid)
+	m:set(uid, "hysteria_up_mbps", "100")
+	m:set(uid, "hysteria_down_mbps", "100")
+	luci.http.redirect(e.extedit:format(uid))
 end
 
 o = s:option(Value, "remark", translate("Remarks"))
@@ -147,7 +151,7 @@ o.validate = function(self, value, section)
 		return nil, translate("Remark cannot be empty.")
 	end
 	local duplicate = false
-	m.uci:foreach(appname, cfgname, function(e)
+	m:foreach(s.sectiontype, function(e)
 		if e[".name"] ~= section and e["remark"] and e["remark"]:lower() == value:lower() then
 			duplicate = true
 			return false
@@ -161,9 +165,9 @@ end
 o.write = function(self, section, value)
 	local old = m:get(section, self.option) or ""
 	if old ~= value then
-		m.uci:foreach(appname, "nodes", function(e)
+		m:foreach("nodes", function(e)
 			if e["group"] and e["group"]:lower() == old:lower() then
-				m.uci:set(appname, e[".name"], "group", value)
+				m:set(e[".name"], "group", value)
 			end
 			if e["protocol"] and (e["protocol"] == "_balancing" or e["protocol"] == "_urltest") and e["node_group"] then
 				local gs = ""
@@ -175,7 +179,7 @@ o.write = function(self, section, value)
 					end
 				end
 				gs = api.trim(gs)
-				m.uci:set(appname, e[".name"], "node_group", gs)
+				m:set(e[".name"], "node_group", gs)
 			end
 		end)
 	end
@@ -193,7 +197,7 @@ o.cfgvalue = function(t, n)
 	end
 	str = str ~= "" and "<br>" .. str or ""
 	local num = 0
-	m.uci:foreach(appname, "nodes", function(s)
+	m:foreach("nodes", function(s)
 		if s["group"] and s["group"]:lower() == remark:lower() then
 			num = num + 1
 		end
@@ -217,16 +221,13 @@ end
 o = s:option(DummyValue, "_update", translate("Manual subscription"))
 o.rawhtml = true
 o.cfgvalue = function(self, section)
-    return string.format([[
-        <input type="button" class="btn cbi-button cbi-button-apply" onclick="ManualSubscribe('%s')" value="%s" />]],
+	return string.format([[
+		<input type="button" class="btn cbi-button cbi-button-apply" onclick="ManualSubscribe('%s')" value="%s" />]],
 	section, translate("Manual subscription"))
 end
 
-local sortable = Template(appname .. "/cbi/sortable")
-sortable.api = api
-sortable.target_cfgname = cfgname
-m:append(sortable)
+m:appendTemplate("/cbi/sortable", {sectiontype = s.sectiontype})
 
-m:append(Template(appname .. "/node_subscribe/js"))
+m:appendTemplate("/node_subscribe/js")
 
 return api.return_map(m)

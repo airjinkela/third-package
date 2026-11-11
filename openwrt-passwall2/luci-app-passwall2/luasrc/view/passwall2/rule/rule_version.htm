@@ -1,5 +1,6 @@
 <%
-local api = require "luci.passwall2.api"
+local map = self.map
+local api = map.api
 local fs = api.fs
 local has_old_geoip = fs.access("/tmp/bak_v2ray/geoip.dat")
 local has_old_geosite = fs.access("/tmp/bak_v2ray/geosite.dat")
@@ -86,9 +87,9 @@ local has_old_geosite = fs.access("/tmp/bak_v2ray/geosite.dat")
 		var checkBoxList = [];
 		var len = domList.length;
 		while(len--) {
-			var dom = domList[len];　　
-			if(dom.type == 'checkbox' && dom.checked) {　　
-				checkBoxList.push(dom.name);　　
+			var dom = domList[len];
+			if(dom.type == 'checkbox' && dom.checked) {
+				checkBoxList.push(dom.name);
 			}
 		}
 		XHR.get('<%=api.url("update_rules")%>', {
@@ -105,7 +106,7 @@ local has_old_geosite = fs.access("/tmp/bak_v2ray/geosite.dat")
 			}
 		);
 	}
-	
+
 	function rollback_rules(btn, type) {
 		let ori_val = btn.value;
 		btn.disabled = true;

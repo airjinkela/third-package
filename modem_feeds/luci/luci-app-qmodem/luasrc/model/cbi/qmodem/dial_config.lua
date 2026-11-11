@@ -61,7 +61,8 @@ for i1,v1 in ipairs(avalible_ports) do
 end
 
 use_ubus = s:taboption("general",Flag, "use_ubus",translate("Use Ubus"))
-use_ubus.default = "0"
+use_ubus.default = "1"
+use_ubus.rmempty = false
 
 at_port.placeholder = translate("Not null")
 at_port.rmempty = false
@@ -114,6 +115,7 @@ pdp_type.rmempty = false
 pdp_type:value("ip", translate("IPv4"))
 pdp_type:value("ipv6", translate("IPv6"))
 pdp_type:value("ipv4v6", translate("IPv4/IPv6"))
+pdp_type:value("ethernet", translate("Ethernet"))
 
 
 -- 接入点

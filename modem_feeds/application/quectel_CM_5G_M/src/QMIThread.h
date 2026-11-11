@@ -203,6 +203,7 @@ typedef struct __PROFILE {
     int enable_bridge;
     bool enable_ipv4;
     bool enable_ipv6;
+    bool managed_ipv4;
     bool no_dhcp;
     bool no_dns;
     const char *logfile;
@@ -236,6 +237,7 @@ typedef struct __PROFILE {
     UCHAR PCSCFIpv6Addr2[16];
     bool reattach_flag;
     int hardware_interface;
+    int generic_mhi; /* 1: raw-IP QMI, 2: native WWAN MBIM */
     int software_interface;
 
     struct usb_device_info usb_dev;

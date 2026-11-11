@@ -1,97 +1,75 @@
+# luci-app-lucky
 
-## 怎么确定当前系统CPU架构下载相应lucky核心包
-复制以下指令到终端执行,根据显示下载文件名含有架构字符串的ipk包
-```
-cd /tmp ;if [ -f /usr/bin/curl ];then curl -sSO http://release.66666.host/luckyarch.sh;else wget -O http://release.66666.host/luckyarch.sh;fi;sh luckyarch.sh 
-```
+OpenWrt 的 Lucky 核心包与 LuCI 管理界面，支持服务管理、打开 Lucky 后台及手动刷新状态。
 
+- `lucky`：Lucky 核心。
+- `luci-app-lucky`：LuCI 管理界面。
+- `luci-i18n-lucky-zh-cn`：简体中文语言包。
 
-## 1.X升级2.X版本注意
+## 兼容性
 
-第一种方法：先通过lucky后台上传tar.gz方式升级lucky
-再安装
+支持 OpenWrt 19.07、21.02、22.03、23.05、24.10（IPK）及 25.12 / Snapshot（APK）。请选择与设备的 OpenWrt 版本和包架构匹配的软件包。
 
-- luci-app-lucky 
-- luci-i18n-lucky-zh-cn 
+支持原生 JavaScript LuCI，以及 Lean/LEDE 的旧式 Lua LuCI：两者使用同一份管理页面，旧式 LuCI 自动加载插件专用的兼容接口，不替换系统 LuCI 文件。不能仅凭固件日期或内核版本判断 LuCI 类型。
 
-两个ipk包
+## 安装与升级
 
-第二种方法：
+将对应的软件包上传到路由器 `/tmp`，在路由器终端执行。
 
-lucky后台备份配置下载保存后，将lucky相关IPK卸载干净
-```
-opkg remove lucky
-opkg remove luci-i18n-lucky-zh-cn
-opkg remove luci-app-lucky
+**IPK：**
+
+```sh
+opkg install /tmp/lucky_*.ipk
+opkg install /tmp/luci-app-lucky_*.ipk /tmp/luci-i18n-lucky-zh-cn_*.ipk
 ```
 
-再安装 
-- lucky 
-- luci-app-lucky 
-- luci-i18n-lucky-zh-cn 
+**APK：**
 
-三个ipk包
-
-
-
-本分支本人自用,仅供参考.
-配置文件架构和https://github.com/sirpdboy/luci-app-lucky 版本可能存在冲突,
-
-替换版本前请使用前备份下载lucky配置
-
-然后执行执行
+```sh
+apk add --allow-untrusted /tmp/lucky-*.apk
+apk add --allow-untrusted /tmp/luci-app-lucky-*.apk /tmp/luci-i18n-lucky-zh-cn-*.apk
 ```
-opkg remove lucky
-opkg remove luci-i18n-lucky-zh-cn
-opkg remove luci-app-lucky
-```
-卸载删除干净之前文件.
 
+安装后进入 LuCI 的 **服务 → Lucky**。
 
+安装会刷新设备端的菜单与权限。若当前浏览器标签页仍不显示 Lucky，在**同一标签页**打开 `http://路由器地址/luci-static/lucky-menu-refresh.html`，即可刷新菜单并进入插件，保留登录状态；HTTPS 或自定义端口请沿用原后台地址。
 
+页面分为概览、访问规则和维护。访问规则可编辑配置目录中的 `localips`，以及 Lucky 3.1.0 及以上版本的 `ip-allowlist.txt`；两者均随整目录备份、还原。
 
-最新版本编译好的IPK包请在
-https://url21.ctfile.com/d/44547821-55537427-a5525e?p=16601
-下载
+概览页可开启“意外退出自动恢复”（默认关闭），每分钟通过系统服务检查，反复异常时至少间隔 5 分钟重试。主动停止或维护期间暂停恢复，再次启动后恢复守护；卸载 `lucky` 核心包会删除插件创建的计划任务，保留其他任务。此功能需同时更新核心包的服务脚本，仅上传核心程序不会更新服务脚本。
 
+维护页可按需查看、刷新和复制近期 OOM、崩溃及反复退出的相关系统日志；重启或日志轮转后记录可能丢失。
 
+LuCI 支持整目录 ZIP 备份与完整替换还原（含隐藏文件和子目录）。操作前停止 Lucky，原本运行时操作结束后恢复运行；此格式仅供 LuCI 还原，不与 Lucky 后台的模块备份混用。
 
+旧版可直接安装新版软件包升级，无需先卸载。升级会保留服务配置和 Lucky 数据，建议提前在 Lucky 后台导出备份。
 
+## 构建与开发
 
-## 使用方法
-   
-- 将luci-app-lucky添加至 LEDE/OpenWRT 源码的方法。
+参见 [构建说明](BUILDING.md) 和 [贡献说明](CONTRIBUTING.md)。
 
+## 界面预览
 
+以下为新版界面在 iStoreOS（Argon 主题）中的实机截图，支持桌面与手机布局，样式随 LuCI 主题自适应。
 
-### 下载源码：
+![概览：服务状态与自动恢复开关](./previews/overview.jpg)
 
- ```Brach 
- 
-    进入lede/openwrt项目根目录下
-    # 下载源码
-	
-    git clone  https://github.com/gdy666/luci-app-lucky.git package/lucky
-	
- ``` 
-### 配置菜单
+![访问规则：绝对白名单与局域网网段编辑](./previews/access-rules.jpg)
 
- ```Brach
-    make menuconfig
-	# 找到 LuCI -> Applications, 选择 luci-app-lucky, 保存后退出。
- ``` 
- 
-### 编译
+![维护：核心维护、配置备份还原与异常日志](./previews/maintenance.jpg)
 
- ```Brach 
-    # 编译lucky IPK包
-    make package/lucky/lucky/compile V=s
-    # 编译luci-app-lucky IPK包
-    make package/lucky/luci-app-lucky/compile V=s
-    
- ```
+<details>
+<summary>手机布局预览</summary>
 
+<img src="./previews/mobile.jpg" alt="手机布局：服务状态、自动恢复开关与管理后台" width="390">
 
-## 截图
-![](./previews/001.png)
-![](./previews/002.png)
+</details>
+
+## License
+
+- Lucky 核心：MIT
+- LuCI 管理界面：Apache-2.0
+
+清空配置会先展示删除清单并停止 Lucky，删除配置目录内全部内容后保持停止，手动启动即可生成新配置。仅允许操作空目录或根目录含普通 `.lkcf` 文件的专用配置目录，请先备份。
+
+核心维护支持检测核心缺失、修复执行权限，以及上传匹配架构的 Lucky Linux `tar.gz` 升级包，仅替换核心程序。先检查压缩包与架构，确认后停止服务，再运行新核心校验并替换，降低小内存设备的校验峰值；失败时尝试恢复旧核心与原运行状态。内存不足仍可能导致失败，不能保证 OOM 或断电后的自动恢复。

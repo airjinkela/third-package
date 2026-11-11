@@ -18,6 +18,7 @@ user-agent-partial-replace: false
 
 l3-rewrite:
   ttl: false
+  ttl-value: 64
   ipid: false
   tcpts: false
   tcpwin: false
@@ -26,8 +27,8 @@ l3-rewrite:
 
 desync:
   reorder: false
-  reorder-bytes: 8
-  reorder-packets: 1500
+  reorder-bytes: 1500
+  reorder-packets: 8
   inject: false
   inject-ttl: 3
 

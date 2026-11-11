@@ -15,7 +15,7 @@ update_cfg()
 	config_load qmodem
 	config_get AT_PORT "$MODEM_CFG" at_port
 	config_get ALIAS "$MODEM_CFG" alias
-	config_get USE_UBUS "$MODEM_CFG" use_ubus
+	config_get USE_UBUS "$MODEM_CFG" use_ubus 1
 	use_ubus_flag=
 	[ "$USE_UBUS" != 1 ] || use_ubus_flag=-u
 }
@@ -23,7 +23,7 @@ update_cfg()
 update_netdev()
 {
 	config_load network
-	if [ -n "$ALIAS" ]; then
+	if [ -n "$ALIAS" ] && [ "$ALIAS" != "-" ]; then
 		config_get NET_DEV "$ALIAS" ifname
 	else
 		config_get NET_DEV "$MODEM_CFG" ifname

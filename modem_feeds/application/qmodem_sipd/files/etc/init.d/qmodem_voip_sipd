@@ -1,0 +1,3 @@
+#!/bin/sh
+# Compatibility command only. No procd instances and no second autostart.
+exec /etc/init.d/qmodem_sipd "$@"
